@@ -44,7 +44,10 @@ const accountSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1).max(100),
   institution: z.string().max(120).optional().nullable(),
-  category: z.string().min(1),
+  category: z.enum([
+    "bank","cash","credit_card","fixed_deposit","recurring_deposit","ppf","epf","nps",
+    "mutual_fund","stocks","post_office","gold","real_estate","loan","insurance","chit_fund","other",
+  ]),
   subtype: z.string().optional().nullable(),
   currency: z.string().default("INR"),
   opening_balance: z.number(),
