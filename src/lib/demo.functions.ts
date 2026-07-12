@@ -42,7 +42,7 @@ export const ensureDemoAccount = createServerFn({ method: "POST" }).handler(asyn
   }
 
   // 4. Seed accounts
-  const accounts = [
+  const accounts: any[] = [
     { name: "HDFC Savings", institution: "HDFC Bank", category: "bank", subtype: "savings", opening_balance: 185000, current_balance: 185000, account_number_last4: "4521" },
     { name: "ICICI Salary", institution: "ICICI Bank", category: "bank", subtype: "savings", opening_balance: 92000, current_balance: 92000, account_number_last4: "7788" },
     { name: "Cash Wallet", institution: null, category: "cash", opening_balance: 3500, current_balance: 3500 },
