@@ -63,6 +63,7 @@ export const ensureDemoAccount = createServerFn({ method: "POST" }).handler(asyn
     .insert(accounts.map((a) => ({
       is_liability: false,
       excluded_from_net_worth: false,
+      details: {},
       ...a,
       household_id: householdId,
       currency: "INR",
