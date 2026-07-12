@@ -110,29 +110,31 @@ function Dashboard() {
             {catData.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-foreground">No assets yet.</p>
             ) : (
-              <div className="h-64">
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie
-                      data={catData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={55}
-                      outerRadius={90}
-                      paddingAngle={2}
-                    >
-                      {catData.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(v: any) => formatINR(Number(v))}
-                      contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8 }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+              <>
+                <div className="h-64">
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie
+                        data={catData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={90}
+                        paddingAngle={2}
+                      >
+                        {catData.map((_, i) => (
+                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(v: any) => formatINR(Number(v))}
+                        contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8 }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
                 <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                   {catData.map((c, i) => (
                     <div key={c.name} className="flex items-center gap-1.5">
@@ -142,7 +144,7 @@ function Dashboard() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
