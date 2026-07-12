@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
+import { ensureDemoAccount } from "@/lib/demo.functions";
+import { Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -76,6 +78,25 @@ function AuthPage() {
     router.navigate({ to: "/", replace: true });
   };
 
+  const tryDemo = async () => {
+    setBusy(true);
+    try {
+      const creds = await ensureDemoAccount();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: creds.email,
+        password: creds.password,
+      });
+      if (error) throw error;
+      toast.success(creds.seeded ? "Demo account ready with sample data" : "Signed in to demo account");
+      router.navigate({ to: "/", replace: true });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to load demo");
+      setBusy(false);
+    }
+  };
+
+
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
@@ -142,6 +163,14 @@ function AuthPage() {
             <Button variant="outline" className="w-full" onClick={google} disabled={busy}>
               Continue with Google
             </Button>
+
+            <Button variant="secondary" className="mt-2 w-full" onClick={tryDemo} disabled={busy}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Try demo account
+            </Button>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Explore Paisa with pre-loaded Indian accounts, transactions & bills
+            </p>
           </CardContent>
         </Card>
       </div>
