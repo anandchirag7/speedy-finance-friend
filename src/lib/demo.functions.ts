@@ -60,7 +60,13 @@ export const ensureDemoAccount = createServerFn({ method: "POST" }).handler(asyn
 
   const { data: insertedAccounts, error: accErr } = await supabaseAdmin
     .from("accounts")
-    .insert(accounts.map((a) => ({ ...a, household_id: householdId, currency: "INR" })))
+    .insert(accounts.map((a) => ({
+      is_liability: false,
+      excluded_from_net_worth: false,
+      ...a,
+      household_id: householdId,
+      currency: "INR",
+    })))
     .select("id, name, category");
   if (accErr) throw accErr;
 
