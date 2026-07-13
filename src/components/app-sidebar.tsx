@@ -9,6 +9,7 @@ import {
   TrendingUp,
   BarChart3,
   Settings,
+  MessageSquare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,6 +27,7 @@ const primary = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Accounts", url: "/accounts", icon: Wallet },
   { title: "Transactions", url: "/transactions", icon: ArrowLeftRight },
+  { title: "Ask Paisa", url: "/chat", icon: MessageSquare },
 ];
 
 const planning = [
