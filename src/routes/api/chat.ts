@@ -199,7 +199,7 @@ You have read-only tools to fetch the user's actual data when the question needs
         const result = streamText({
           model: gateway("openai/gpt-5.5"),
           system: systemPrompt,
-          messages: convertToModelMessages(body.messages),
+          messages: await convertToModelMessages(body.messages),
           tools,
           stopWhen: stepCountIs(50),
         });
