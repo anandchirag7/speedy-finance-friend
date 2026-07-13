@@ -30,9 +30,12 @@ function TransactionsPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6 space-y-4">
-      <div>
-        <h1 className="font-display text-2xl font-semibold">Transactions</h1>
-        <p className="text-sm text-muted-foreground">Tap the + button anywhere to add a new one.</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="font-display text-2xl font-semibold">Transactions</h1>
+          <p className="text-sm text-muted-foreground">Tap the + button anywhere to add a new one.</p>
+        </div>
+        <StatementImportDialog />
       </div>
 
       {isLoading ? (
