@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { listTransactions, deleteTransaction } from "@/lib/finance.functions";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { StatementImportDialog } from "@/components/statement-import-dialog";
 
 export const Route = createFileRoute("/_authenticated/transactions")({
   head: () => ({ meta: [{ title: "Transactions — Paisa" }] }),
