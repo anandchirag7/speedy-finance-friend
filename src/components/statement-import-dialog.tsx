@@ -1,0 +1,342 @@
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Upload, Loader2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { listAccounts } from "@/lib/finance.functions";
+import {
+  parseStatement,
+  bulkInsertTransactions,
+} from "@/lib/statement-import.functions";
+
+type ParsedTxn = {
+  date: string;
+  description: string;
+  amount: number;
+  type: "income" | "expense" | "transfer";
+  suggestedCategory: string;
+};
+
+type Category = { id: string; name: string; kind: string; parent_id: string | null };
+
+const BANKS = [
+  "HDFC Bank", "ICICI Bank", "State Bank of India", "Axis Bank", "Kotak Mahindra",
+  "IDFC First", "Yes Bank", "IndusInd", "Punjab National Bank", "Bank of Baroda",
+  "American Express", "Citibank", "HSBC", "Standard Chartered", "Other",
+];
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result ?? "");
+      resolve(s.includes(",") ? s.split(",")[1] : s);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export function StatementImportDialog() {
+  const parseFn = useServerFn(parseStatement);
+  const saveFn = useServerFn(bulkInsertTransactions);
+  const qc = useQueryClient();
+  const listAcc = useServerFn(listAccounts);
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: () => listAcc(),
+  });
+
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"upload" | "mapping">("upload");
+  const [accountId, setAccountId] = useState<string>("");
+  const [bank, setBank] = useState<string>("");
+  const [file, setFile] = useState<File | null>(null);
+  const [parsing, setParsing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [rows, setRows] = useState<Array<ParsedTxn & { category_id: string | null; include: boolean }>>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  const reset = () => {
+    setStep("upload");
+    setAccountId("");
+    setBank("");
+    setFile(null);
+    setRows([]);
+    setCategories([]);
+  };
+
+  const onUpload = async () => {
+    if (!accountId) return toast.error("Choose an account");
+    if (!bank) return toast.error("Choose a bank");
+    if (!file) return toast.error("Choose a file");
+    setParsing(true);
+    try {
+      const base64 = await readFileAsBase64(file);
+      const result = await parseFn({
+        data: {
+          accountId,
+          bank,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          base64,
+        },
+      });
+      if (!result.transactions.length) {
+        toast.error("No transactions found in file");
+        return;
+      }
+      setCategories(result.categories);
+      const mapped = result.transactions.map((t) => {
+        const match = result.categories.find(
+          (c) => c.name.toLowerCase() === (t.suggestedCategory ?? "").toLowerCase(),
+        );
+        return { ...t, category_id: match?.id ?? null, include: true };
+      });
+      setRows(mapped);
+      setStep("mapping");
+      toast.success(`Parsed ${mapped.length} transactions`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to parse statement");
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const onSave = async () => {
+    const toSave = rows.filter((r) => r.include);
+    if (!toSave.length) return toast.error("Nothing to save");
+    setSaving(true);
+    try {
+      await saveFn({
+        data: {
+          accountId,
+          transactions: toSave.map((r) => ({
+            txn_date: r.date,
+            amount: Number(r.amount),
+            type: r.type,
+            category_id: r.category_id,
+            note: r.description.slice(0, 500),
+          })),
+        },
+      });
+      toast.success(`Imported ${toSave.length} transactions`);
+      qc.invalidateQueries();
+      setOpen(false);
+      reset();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Upload className="mr-2 h-4 w-4" /> Import statement
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
+            {step === "upload" ? "Import bank statement" : "Review & categorize"}
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === "upload" ? (
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Account</Label>
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger><SelectValue placeholder="Pick account" /></SelectTrigger>
+                <SelectContent>
+                  {(accounts as any[]).map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Bank</Label>
+              <Select value={bank} onValueChange={setBank}>
+                <SelectTrigger><SelectValue placeholder="Pick bank" /></SelectTrigger>
+                <SelectContent>
+                  {BANKS.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Statement file (CSV, Excel or PDF)</Label>
+              <Input
+                type="file"
+                accept=".csv,.xlsx,.xls,.pdf,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              {file && <p className="text-xs text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>}
+            </div>
+            <DialogFooter>
+              <Button onClick={onUpload} disabled={parsing}>
+                {parsing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {parsing ? "Parsing with AI…" : "Parse statement"}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-auto rounded-md border">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background">
+                  <TableRow>
+                    <TableHead className="w-10"></TableHead>
+                    <TableHead className="w-28">Date</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="w-28">Type</TableHead>
+                    <TableHead className="w-28 text-right">Amount</TableHead>
+                    <TableHead className="w-56">Category</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r, i) => (
+                    <TableRow key={i} className={r.include ? "" : "opacity-40"}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={r.include}
+                          onChange={(e) => {
+                            const copy = [...rows];
+                            copy[i] = { ...r, include: e.target.checked };
+                            setRows(copy);
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="date"
+                          value={r.date}
+                          onChange={(e) => {
+                            const copy = [...rows];
+                            copy[i] = { ...r, date: e.target.value };
+                            setRows(copy);
+                          }}
+                          className="h-8"
+                        />
+                      </TableCell>
+                      <TableCell className="text-xs">{r.description}</TableCell>
+                      <TableCell>
+                        <Select
+                          value={r.type}
+                          onValueChange={(v: any) => {
+                            const copy = [...rows];
+                            copy[i] = { ...r, type: v };
+                            setRows(copy);
+                          }}
+                        >
+                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="expense">Expense</SelectItem>
+                            <SelectItem value="income">Income</SelectItem>
+                            <SelectItem value="transfer">Transfer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={r.amount}
+                          onChange={(e) => {
+                            const copy = [...rows];
+                            copy[i] = { ...r, amount: Number(e.target.value) };
+                            setRows(copy);
+                          }}
+                          className="h-8 text-right"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={r.category_id ?? "none"}
+                          onValueChange={(v) => {
+                            const copy = [...rows];
+                            copy[i] = { ...r, category_id: v === "none" ? null : v };
+                            setRows(copy);
+                          }}
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue placeholder={r.suggestedCategory || "Uncategorized"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Uncategorized</SelectItem>
+                            {categories
+                              .filter((c) => c.kind === r.type || r.type === "transfer")
+                              .map((c) => (
+                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <DialogFooter className="mt-2">
+              <div className="mr-auto text-sm text-muted-foreground">
+                {rows.filter((r) => r.include).length} of {rows.length} selected
+              </div>
+              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button onClick={onSave} disabled={saving}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save transactions
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
