@@ -214,10 +214,45 @@ export const listTransactions = createServerFn({ method: "GET" })
   });
 
 // ---------- dashboard ----------
+const rangeSchema = z
+  .object({ range: z.enum(["1m", "3m", "6m", "1y", "ytd"]).default("1m") })
+  .default({ range: "1m" });
+
+function computeRange(range: "1m" | "3m" | "6m" | "1y" | "ytd") {
+  const now = new Date();
+  const start = new Date(now);
+  let months = 1;
+  if (range === "1m") {
+    start.setDate(1);
+    months = 1;
+  } else if (range === "3m") {
+    start.setMonth(now.getMonth() - 2);
+    start.setDate(1);
+    months = 3;
+  } else if (range === "6m") {
+    start.setMonth(now.getMonth() - 5);
+    start.setDate(1);
+    months = 6;
+  } else if (range === "1y") {
+    start.setMonth(now.getMonth() - 11);
+    start.setDate(1);
+    months = 12;
+  } else {
+    // ytd
+    start.setMonth(0);
+    start.setDate(1);
+    months = now.getMonth() + 1;
+  }
+  return { start, months };
+}
+
 export const getDashboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((data: unknown) => rangeSchema.parse(data ?? {}))
+  .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
+    const { start: rangeStart, months: rangeMonths } = computeRange(data.range);
+    const rangeStartStr = rangeStart.toISOString().slice(0, 10);
 
     const { data: accounts } = await context.supabase
       .from("accounts")
@@ -240,20 +275,24 @@ export const getDashboard = createServerFn({ method: "GET" })
     }
     const netWorth = assets - liabilities;
 
-    // This month's income / expense
-    const start = new Date();
-    start.setDate(1);
-    const startStr = start.toISOString().slice(0, 10);
-    const { data: monthTxns } = await context.supabase
+    // Income / expense across the selected range
+    const { data: rangeTxns } = await context.supabase
       .from("transactions")
-      .select("type, amount, category_id, category:categories(name)")
+      .select("type, amount, txn_date, category:categories(name)")
       .eq("household_id", householdId)
-      .gte("txn_date", startStr);
+      .gte("txn_date", rangeStartStr);
 
     let income = 0;
     let expense = 0;
     const spendByCat: Record<string, number> = {};
-    for (const t of monthTxns ?? []) {
+    const buckets: Record<string, { income: number; expense: number }> = {};
+    for (let i = 0; i < rangeMonths; i++) {
+      const d = new Date(rangeStart);
+      d.setMonth(rangeStart.getMonth() + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      buckets[key] = { income: 0, expense: 0 };
+    }
+    for (const t of rangeTxns ?? []) {
       const amt = Number(t.amount);
       if (t.type === "income") income += amt;
       else if (t.type === "expense") {
@@ -261,33 +300,11 @@ export const getDashboard = createServerFn({ method: "GET" })
         const cat = (t as any).category?.name ?? "Uncategorized";
         spendByCat[cat] = (spendByCat[cat] ?? 0) + amt;
       }
-    }
-
-    // --- 6-month cash flow (income vs expense per month) ---
-    const cashFlowStart = new Date();
-    cashFlowStart.setMonth(cashFlowStart.getMonth() - 5);
-    cashFlowStart.setDate(1);
-    const cashFlowStartStr = cashFlowStart.toISOString().slice(0, 10);
-    const { data: cfTxns } = await context.supabase
-      .from("transactions")
-      .select("type, amount, txn_date")
-      .eq("household_id", householdId)
-      .gte("txn_date", cashFlowStartStr)
-      .in("type", ["income", "expense"]);
-
-    const buckets: Record<string, { income: number; expense: number }> = {};
-    for (let i = 0; i < 6; i++) {
-      const d = new Date(cashFlowStart);
-      d.setMonth(cashFlowStart.getMonth() + i);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      buckets[key] = { income: 0, expense: 0 };
-    }
-    for (const t of cfTxns ?? []) {
       const key = (t.txn_date as string).slice(0, 7);
-      if (!buckets[key]) continue;
-      const amt = Number(t.amount);
-      if (t.type === "income") buckets[key].income += amt;
-      else if (t.type === "expense") buckets[key].expense += amt;
+      if (buckets[key]) {
+        if (t.type === "income") buckets[key].income += amt;
+        else if (t.type === "expense") buckets[key].expense += amt;
+      }
     }
     const cashFlow = Object.entries(buckets).map(([month, v]) => ({
       month,
@@ -297,33 +314,27 @@ export const getDashboard = createServerFn({ method: "GET" })
       net: v.income - v.expense,
     }));
 
-    // --- Net worth trend (last 12 snapshots) ---
+    // --- Net worth trend within range ---
     const { data: snaps } = await context.supabase
       .from("net_worth_snapshots")
       .select("snapshot_date, net_worth, total_assets, total_liabilities")
       .eq("household_id", householdId)
+      .gte("snapshot_date", rangeStartStr)
       .order("snapshot_date", { ascending: true })
-      .limit(24);
-    const netWorthTrend = (snaps ?? []).slice(-12).map((s: any) => ({
+      .limit(400);
+    const netWorthTrend = (snaps ?? []).map((s: any) => ({
       date: s.snapshot_date,
       label: new Date(s.snapshot_date).toLocaleDateString("en-IN", { month: "short", day: "2-digit" }),
       netWorth: Number(s.net_worth ?? 0),
       assets: Number(s.total_assets ?? 0),
       liabilities: Number(s.total_liabilities ?? 0),
     }));
-    // Always include today's live value as the latest point
     const todayStr = new Date().toISOString().slice(0, 10);
     if (netWorthTrend.length === 0 || netWorthTrend[netWorthTrend.length - 1].date !== todayStr) {
-      netWorthTrend.push({
-        date: todayStr,
-        label: "Now",
-        netWorth,
-        assets,
-        liabilities,
-      });
+      netWorthTrend.push({ date: todayStr, label: "Now", netWorth, assets, liabilities });
     }
 
-    // --- Upcoming bills (next 30 days) ---
+    // --- Upcoming bills (always next 30 days, independent of range) ---
     const inThirty = new Date();
     inThirty.setDate(inThirty.getDate() + 30);
     const { data: billsData } = await context.supabase
@@ -352,6 +363,7 @@ export const getDashboard = createServerFn({ method: "GET" })
     const upcomingBillsTotal = upcomingBills.reduce((s: number, b: any) => s + b.amount, 0);
 
     return {
+      range: data.range,
       netWorth,
       assets,
       liabilities,
@@ -367,4 +379,5 @@ export const getDashboard = createServerFn({ method: "GET" })
       upcomingBillsTotal,
     };
   });
+
 
