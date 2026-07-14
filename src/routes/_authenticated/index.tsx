@@ -244,7 +244,7 @@ function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Income vs expenses</CardTitle>
-            <CardDescription>Last 6 months cash flow</CardDescription>
+            <CardDescription>Cash flow · {rangeLabels[range]}</CardDescription>
           </CardHeader>
           <CardContent>
             {(d.cashFlow ?? []).length === 0 ? (
