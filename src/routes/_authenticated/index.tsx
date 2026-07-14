@@ -108,8 +108,36 @@ function Dashboard() {
       ? (trendChange / Math.abs(trend[0].netWorth)) * 100
       : 0;
 
+  const rangeLabels: Record<typeof range, string> = {
+    "1m": "this month",
+    "3m": "last 3 months",
+    "6m": "last 6 months",
+    "1y": "last 12 months",
+    ytd: "year to date",
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+      {/* Range switcher */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Showing <span className="text-foreground font-medium">{rangeLabels[range]}</span>
+        </p>
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={range}
+          onValueChange={(v) => v && setRange(v as typeof range)}
+          className="rounded-lg border bg-card p-0.5"
+        >
+          <ToggleGroupItem value="1m" className="h-7 px-2.5 text-xs">1M</ToggleGroupItem>
+          <ToggleGroupItem value="3m" className="h-7 px-2.5 text-xs">3M</ToggleGroupItem>
+          <ToggleGroupItem value="6m" className="h-7 px-2.5 text-xs">6M</ToggleGroupItem>
+          <ToggleGroupItem value="1y" className="h-7 px-2.5 text-xs">1Y</ToggleGroupItem>
+          <ToggleGroupItem value="ytd" className="h-7 px-2.5 text-xs">YTD</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
       {/* Hero */}
       <div className="rounded-2xl border bg-card p-6 md:p-8">
         <p className="text-xs uppercase tracking-wider text-muted-foreground">Total Net Worth</p>
@@ -124,27 +152,29 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* This month */}
+      {/* Range metrics */}
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard
           icon={<ArrowUpRight className="h-4 w-4" />}
-          label="Income this month"
+          label={`Income · ${rangeLabels[range]}`}
           value={formatINR(d.income)}
           tone="success"
         />
         <MetricCard
           icon={<ArrowDownRight className="h-4 w-4" />}
-          label="Expenses this month"
+          label={`Expenses · ${rangeLabels[range]}`}
           value={formatINR(d.expense)}
           tone="destructive"
         />
         <MetricCard
           icon={<PiggyBank className="h-4 w-4" />}
-          label="Savings"
+          label={`Savings · ${rangeLabels[range]}`}
           value={formatINR(d.savings)}
           tone={d.savings >= 0 ? "success" : "destructive"}
         />
       </div>
+
+
 
       {/* Net worth trend + Cash flow */}
       <div className="grid gap-4 lg:grid-cols-2">
