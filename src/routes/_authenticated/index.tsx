@@ -406,7 +406,7 @@ function Dashboard() {
       {/* Top spending */}
       <Card>
         <CardHeader>
-          <CardTitle>Top spending this month</CardTitle>
+          <CardTitle>Top spending · {rangeLabels[range]}</CardTitle>
           <CardDescription>Where your outflow is going</CardDescription>
         </CardHeader>
         <CardContent>
