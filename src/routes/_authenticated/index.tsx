@@ -58,9 +58,14 @@ const TOOLTIP_STYLE = {
 
 function Dashboard() {
   const fn = useServerFn(getDashboard);
-  const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: fn });
+  const [range, setRange] = useState<"1m" | "3m" | "6m" | "1y" | "ytd">("1m");
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard", range],
+    queryFn: () => fn({ data: { range } }),
+  });
 
-  if (isLoading) {
+  if (isLoading && !data) {
+
     return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
 
