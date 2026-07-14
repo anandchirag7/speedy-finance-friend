@@ -263,6 +263,94 @@ export const getDashboard = createServerFn({ method: "GET" })
       }
     }
 
+    // --- 6-month cash flow (income vs expense per month) ---
+    const cashFlowStart = new Date();
+    cashFlowStart.setMonth(cashFlowStart.getMonth() - 5);
+    cashFlowStart.setDate(1);
+    const cashFlowStartStr = cashFlowStart.toISOString().slice(0, 10);
+    const { data: cfTxns } = await context.supabase
+      .from("transactions")
+      .select("type, amount, txn_date")
+      .eq("household_id", householdId)
+      .gte("txn_date", cashFlowStartStr)
+      .in("type", ["income", "expense"]);
+
+    const buckets: Record<string, { income: number; expense: number }> = {};
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(cashFlowStart);
+      d.setMonth(cashFlowStart.getMonth() + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      buckets[key] = { income: 0, expense: 0 };
+    }
+    for (const t of cfTxns ?? []) {
+      const key = (t.txn_date as string).slice(0, 7);
+      if (!buckets[key]) continue;
+      const amt = Number(t.amount);
+      if (t.type === "income") buckets[key].income += amt;
+      else if (t.type === "expense") buckets[key].expense += amt;
+    }
+    const cashFlow = Object.entries(buckets).map(([month, v]) => ({
+      month,
+      label: new Date(`${month}-01`).toLocaleDateString("en-IN", { month: "short" }),
+      income: v.income,
+      expense: v.expense,
+      net: v.income - v.expense,
+    }));
+
+    // --- Net worth trend (last 12 snapshots) ---
+    const { data: snaps } = await context.supabase
+      .from("net_worth_snapshots")
+      .select("snapshot_date, net_worth, total_assets, total_liabilities")
+      .eq("household_id", householdId)
+      .order("snapshot_date", { ascending: true })
+      .limit(24);
+    const netWorthTrend = (snaps ?? []).slice(-12).map((s: any) => ({
+      date: s.snapshot_date,
+      label: new Date(s.snapshot_date).toLocaleDateString("en-IN", { month: "short", day: "2-digit" }),
+      netWorth: Number(s.net_worth ?? 0),
+      assets: Number(s.total_assets ?? 0),
+      liabilities: Number(s.total_liabilities ?? 0),
+    }));
+    // Always include today's live value as the latest point
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (netWorthTrend.length === 0 || netWorthTrend[netWorthTrend.length - 1].date !== todayStr) {
+      netWorthTrend.push({
+        date: todayStr,
+        label: "Now",
+        netWorth,
+        assets,
+        liabilities,
+      });
+    }
+
+    // --- Upcoming bills (next 30 days) ---
+    const inThirty = new Date();
+    inThirty.setDate(inThirty.getDate() + 30);
+    const { data: billsData } = await context.supabase
+      .from("bills")
+      .select("id, name, amount, due_date, status, account:accounts(name)")
+      .eq("household_id", householdId)
+      .neq("status", "paid")
+      .lte("due_date", inThirty.toISOString().slice(0, 10))
+      .order("due_date", { ascending: true })
+      .limit(8);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const upcomingBills = (billsData ?? []).map((b: any) => {
+      const due = new Date(b.due_date);
+      const daysUntil = Math.round((due.getTime() - today.getTime()) / 86400000);
+      return {
+        id: b.id,
+        name: b.name,
+        amount: Number(b.amount ?? 0),
+        due_date: b.due_date,
+        daysUntil,
+        accountName: b.account?.name ?? null,
+        overdue: daysUntil < 0,
+      };
+    });
+    const upcomingBillsTotal = upcomingBills.reduce((s: number, b: any) => s + b.amount, 0);
+
     return {
       netWorth,
       assets,
@@ -273,5 +361,10 @@ export const getDashboard = createServerFn({ method: "GET" })
       expense,
       savings: income - expense,
       spendByCat,
+      cashFlow,
+      netWorthTrend,
+      upcomingBills,
+      upcomingBillsTotal,
     };
   });
+
