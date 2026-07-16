@@ -77,15 +77,17 @@ export function FastEntryDialog({ open: openProp, onOpenChange, hideTrigger }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          size="lg"
-          className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full shadow-lg md:h-12 md:w-auto md:px-5 md:rounded-full"
-        >
-          <Plus className="h-5 w-5" />
-          <span className="hidden md:inline ml-1">Add</span>
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button
+            size="lg"
+            className="fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full shadow-lg md:h-12 md:w-auto md:px-5 md:rounded-full"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="hidden md:inline ml-1">Add</span>
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Quick entry</DialogTitle>
