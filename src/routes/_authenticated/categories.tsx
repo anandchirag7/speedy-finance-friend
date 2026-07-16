@@ -1221,7 +1221,7 @@ function EditDialog({
                                 {list.map((p) => (
                                   <CommandItem
                                     key={p.id}
-                                    value={`${p.kind}:${p.name}`}
+                                    value={`${p.kind}:${p.__path}`}
                                     onSelect={() => {
                                       update({ parent_id: p.id, kind: p.kind });
                                       setParentOpen(false);
@@ -1235,7 +1235,18 @@ function EditDialog({
                                     >
                                       {p.kind}
                                     </span>
-                                    {p.name}
+                                    <span className="truncate">
+                                      {p.__path.includes(" › ") ? (
+                                        <>
+                                          <span className="text-muted-foreground">
+                                            {p.__path.split(" › ").slice(0, -1).join(" › ")} ›{" "}
+                                          </span>
+                                          <span className="font-medium">{p.name}</span>
+                                        </>
+                                      ) : (
+                                        <span className="font-medium">{p.name}</span>
+                                      )}
+                                    </span>
                                   </CommandItem>
                                 ))}
                               </CommandGroup>
