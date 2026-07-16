@@ -78,18 +78,19 @@ export const listMemorizedPayees = createServerFn({ method: "GET" })
     const payees = data ?? [];
 
     // Compute live usage_count / last_used_at from transactions by merchant name
-    const { data: txns } = await context.supabase
+    const { data: txns, error: txnsError } = await context.supabase
       .from("transactions")
-      .select("merchant, date")
+      .select("merchant, txn_date")
       .eq("household_id", householdId)
       .not("merchant", "is", null);
+    if (txnsError) throw txnsError;
     const stats = new Map<string, { count: number; last: string | null }>();
     for (const t of txns ?? []) {
       const key = String((t as any).merchant ?? "").trim().toLowerCase();
       if (!key) continue;
       const cur = stats.get(key) ?? { count: 0, last: null };
       cur.count += 1;
-      const d = (t as any).date as string | null;
+      const d = (t as any).txn_date as string | null;
       if (d && (!cur.last || d > cur.last)) cur.last = d;
       stats.set(key, cur);
     }
