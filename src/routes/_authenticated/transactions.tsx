@@ -307,8 +307,9 @@ function TransactionsWorkspace() {
   const rowH = density === "compact" ? "h-11" : density === "spacious" ? "h-16" : "h-14";
 
   return (
-    <div className="precision-workspace dark min-h-screen">
-      <div className="mx-auto max-w-[1600px] space-y-6 p-4 md:p-8">
+    <div className="precision-workspace min-h-screen bg-background">
+      <div className="mx-auto w-full max-w-[1600px] space-y-4 p-3 sm:p-4 md:space-y-6 md:p-6 lg:p-8">
+
 
         {/* --------- Page header --------- */}
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
