@@ -985,18 +985,56 @@ function EditDialog({
         ? "A category with this name already exists"
         : null;
 
-  // Parent options for subcategory mode
+  // Parent options for subcategory mode — any category except self and its descendants
   const parentGroups = useMemo(() => {
     const q = parentQuery.trim().toLowerCase();
-    const eligible = allCategories.filter(
-      (c) => c.id !== form.id && !c.parent_id && (!q || c.name.toLowerCase().includes(q)),
-    );
-    const groups: Record<string, Cat[]> = {};
+    // Build descendant set to prevent cycles when editing an existing category
+    const descendants = new Set<string>();
+    if (form.id) {
+      const childrenOf = (pid: string) => allCategories.filter((c) => c.parent_id === pid);
+      const stack = [form.id];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const ch of childrenOf(cur)) {
+          if (!descendants.has(ch.id)) {
+            descendants.add(ch.id);
+            stack.push(ch.id);
+          }
+        }
+      }
+    }
+    const nameById = new Map(allCategories.map((c) => [c.id, c.name] as const));
+    const pathOf = (c: Cat): string => {
+      const parts = [c.name];
+      let p = c.parent_id;
+      while (p) {
+        const parent = allCategories.find((x) => x.id === p);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        p = parent.parent_id;
+      }
+      return parts.join(" › ");
+    };
+    const eligible = allCategories
+      .filter(
+        (c) =>
+          c.id !== form.id &&
+          !descendants.has(c.id) &&
+          (!q ||
+            c.name.toLowerCase().includes(q) ||
+            pathOf(c).toLowerCase().includes(q)),
+      )
+      .map((c) => ({ ...c, __path: pathOf(c) }));
+    const groups: Record<string, (Cat & { __path: string })[]> = {};
     for (const c of eligible) {
       (groups[c.kind] ||= []).push(c);
     }
+    // sort each group by path for a tidy tree order
+    for (const k of Object.keys(groups)) groups[k].sort((a, b) => a.__path.localeCompare(b.__path));
+    void nameById;
     return groups;
   }, [allCategories, parentQuery, form.id]);
+
 
   const selectedParent = allCategories.find((c) => c.id === form.parent_id);
   const description = form.description ?? "";
