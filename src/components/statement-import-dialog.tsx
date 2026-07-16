@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Upload, Loader2, Trash2 } from "lucide-react";
+import { Upload, Loader2, Trash2, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -41,9 +42,21 @@ type ParsedTxn = {
   amount: number;
   type: "income" | "expense" | "transfer";
   suggestedCategory: string;
+  payee: string;
 };
 
 type Category = { id: string; name: string; kind: string; parent_id: string | null };
+type ExistingPayee = { id: string; merchant: string; category_id: string | null };
+
+type PayeeCluster = {
+  originalName: string; // AI-suggested name (used to remap rows)
+  name: string; // user-editable final name
+  descriptions: string[];
+  category_id: string | null;
+  type: "expense" | "income" | "transfer";
+  saveAsPayee: boolean; // create memorized payee?
+  isExisting: boolean; // already exists in db
+};
 
 const BANKS = [
   "HDFC Bank", "ICICI Bank", "State Bank of India", "Axis Bank", "Kotak Mahindra",
@@ -74,22 +87,28 @@ export function StatementImportDialog() {
   });
 
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"upload" | "mapping">("upload");
+  const [step, setStep] = useState<"upload" | "payees" | "mapping">("upload");
   const [accountId, setAccountId] = useState<string>("");
   const [bank, setBank] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [rows, setRows] = useState<Array<ParsedTxn & { category_id: string | null; include: boolean }>>([]);
+  const [rawTxns, setRawTxns] = useState<ParsedTxn[]>([]);
+  const [rows, setRows] = useState<Array<ParsedTxn & { category_id: string | null; include: boolean; merchant: string }>>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [existingPayees, setExistingPayees] = useState<ExistingPayee[]>([]);
+  const [clusters, setClusters] = useState<PayeeCluster[]>([]);
 
   const reset = () => {
     setStep("upload");
     setAccountId("");
     setBank("");
     setFile(null);
+    setRawTxns([]);
     setRows([]);
     setCategories([]);
+    setExistingPayees([]);
+    setClusters([]);
   };
 
   const onUpload = async () => {
@@ -113,15 +132,29 @@ export function StatementImportDialog() {
         return;
       }
       setCategories(result.categories);
-      const mapped = result.transactions.map((t) => {
+      setExistingPayees(result.existingPayees);
+      setRawTxns(result.transactions);
+
+      const initialClusters: PayeeCluster[] = result.payees.map((p) => {
         const match = result.categories.find(
-          (c) => c.name.toLowerCase() === (t.suggestedCategory ?? "").toLowerCase(),
+          (c) => c.name.toLowerCase() === (p.suggestedCategory ?? "").toLowerCase(),
         );
-        return { ...t, category_id: match?.id ?? null, include: true };
+        const existing = result.existingPayees.find(
+          (e) => e.merchant.toLowerCase() === p.name.toLowerCase(),
+        );
+        return {
+          originalName: p.name,
+          name: p.name,
+          descriptions: p.descriptions ?? [],
+          category_id: existing?.category_id ?? match?.id ?? null,
+          type: p.type,
+          saveAsPayee: !existing, // by default save new ones
+          isExisting: !!existing || !!p.isExisting,
+        };
       });
-      setRows(mapped);
-      setStep("mapping");
-      toast.success(`Parsed ${mapped.length} transactions`);
+      setClusters(initialClusters);
+      setStep("payees");
+      toast.success(`AI clustered ${initialClusters.length} payees from ${result.transactions.length} transactions`);
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to parse statement");
     } finally {
@@ -129,24 +162,46 @@ export function StatementImportDialog() {
     }
   };
 
+  const onConfirmPayees = () => {
+    // Map each txn to its cluster's final name & category
+    const byOriginal = new Map(clusters.map((c) => [c.originalName, c]));
+    const mapped = rawTxns.map((t) => {
+      const cluster = byOriginal.get(t.payee);
+      const merchant = cluster?.name ?? t.payee ?? "";
+      const category_id = cluster?.category_id ?? null;
+      return { ...t, merchant, category_id, include: true };
+    });
+    setRows(mapped);
+    setStep("mapping");
+  };
+
   const onSave = async () => {
     const toSave = rows.filter((r) => r.include);
     if (!toSave.length) return toast.error("Nothing to save");
     setSaving(true);
     try {
+      const newPayees = clusters
+        .filter((c) => c.saveAsPayee && !c.isExisting && c.name.trim())
+        .map((c) => ({
+          merchant: c.name.trim(),
+          category_id: c.category_id ?? null,
+          txn_type: c.type,
+        }));
       await saveFn({
         data: {
           accountId,
+          newPayees,
           transactions: toSave.map((r) => ({
             txn_date: r.date,
             amount: Number(r.amount),
             type: r.type,
             category_id: r.category_id,
+            merchant: r.merchant || null,
             note: r.description.slice(0, 500),
           })),
         },
       });
-      toast.success(`Imported ${toSave.length} transactions`);
+      toast.success(`Imported ${toSave.length} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`);
       qc.invalidateQueries();
       setOpen(false);
       reset();
@@ -170,14 +225,21 @@ export function StatementImportDialog() {
           <Upload className="mr-2 h-4 w-4" /> Import statement
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>
-            {step === "upload" ? "Import bank statement" : "Review & categorize"}
+            {step === "upload" && "Import bank statement"}
+            {step === "payees" && (
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Confirm payees clustered by AI
+              </span>
+            )}
+            {step === "mapping" && "Review & save transactions"}
           </DialogTitle>
         </DialogHeader>
 
-        {step === "upload" ? (
+        {step === "upload" && (
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Account</Label>
@@ -215,7 +277,106 @@ export function StatementImportDialog() {
               </Button>
             </DialogFooter>
           </div>
-        ) : (
+        )}
+
+        {step === "payees" && (
+          <>
+            <p className="text-sm text-muted-foreground -mt-2">
+              AI grouped similar statement descriptions into vendors. Rename any payee, pick a category, and decide which ones to save to your Memorized Payees. These names will be applied to all matching transactions.
+            </p>
+            <div className="flex-1 overflow-auto rounded-md border">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead className="w-64">Payee name</TableHead>
+                    <TableHead>Matched descriptions</TableHead>
+                    <TableHead className="w-44">Category</TableHead>
+                    <TableHead className="w-24 text-center">Save payee</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {clusters.map((c, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="align-top">
+                        <Input
+                          value={c.name}
+                          onChange={(e) => {
+                            const copy = [...clusters];
+                            copy[i] = { ...c, name: e.target.value };
+                            setClusters(copy);
+                          }}
+                          className="h-8 font-medium"
+                        />
+                        <div className="mt-1 flex items-center gap-1">
+                          {c.isExisting ? (
+                            <Badge variant="secondary" className="text-[10px]">Existing payee</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">New</Badge>
+                          )}
+                          <Badge variant="outline" className="text-[10px] gap-1">
+                            <Users className="h-2.5 w-2.5" />
+                            {c.descriptions.length}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <div className="max-h-24 overflow-auto text-xs text-muted-foreground space-y-0.5">
+                          {c.descriptions.slice(0, 8).map((d, di) => (
+                            <div key={di} className="truncate">• {d}</div>
+                          ))}
+                          {c.descriptions.length > 8 && (
+                            <div className="text-[10px]">+{c.descriptions.length - 8} more</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        <Select
+                          value={c.category_id ?? "none"}
+                          onValueChange={(v) => {
+                            const copy = [...clusters];
+                            copy[i] = { ...c, category_id: v === "none" ? null : v };
+                            setClusters(copy);
+                          }}
+                        >
+                          <SelectTrigger className="h-8"><SelectValue placeholder="Uncategorized" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Uncategorized</SelectItem>
+                            {categories
+                              .filter((cat) => cat.kind === c.type || c.type === "transfer")
+                              .map((cat) => (
+                                <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="text-center align-top">
+                        <input
+                          type="checkbox"
+                          checked={c.saveAsPayee}
+                          disabled={c.isExisting}
+                          onChange={(e) => {
+                            const copy = [...clusters];
+                            copy[i] = { ...c, saveAsPayee: e.target.checked };
+                            setClusters(copy);
+                          }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <DialogFooter className="mt-2">
+              <div className="mr-auto text-sm text-muted-foreground">
+                {clusters.length} payees · {clusters.filter((c) => c.saveAsPayee && !c.isExisting).length} will be saved as new
+              </div>
+              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button onClick={onConfirmPayees}>Continue to transactions</Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {step === "mapping" && (
           <>
             <div className="flex-1 overflow-auto rounded-md border">
               <Table>
@@ -223,10 +384,11 @@ export function StatementImportDialog() {
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
                     <TableHead className="w-28">Date</TableHead>
+                    <TableHead className="w-40">Payee</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="w-28">Type</TableHead>
+                    <TableHead className="w-24">Type</TableHead>
                     <TableHead className="w-28 text-right">Amount</TableHead>
-                    <TableHead className="w-56">Category</TableHead>
+                    <TableHead className="w-48">Category</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -256,7 +418,18 @@ export function StatementImportDialog() {
                           className="h-8"
                         />
                       </TableCell>
-                      <TableCell className="text-xs">{r.description}</TableCell>
+                      <TableCell>
+                        <Input
+                          value={r.merchant}
+                          onChange={(e) => {
+                            const copy = [...rows];
+                            copy[i] = { ...r, merchant: e.target.value };
+                            setRows(copy);
+                          }}
+                          className="h-8 font-medium"
+                        />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{r.description}</TableCell>
                       <TableCell>
                         <Select
                           value={r.type}
@@ -328,7 +501,7 @@ export function StatementImportDialog() {
               <div className="mr-auto text-sm text-muted-foreground">
                 {rows.filter((r) => r.include).length} of {rows.length} selected
               </div>
-              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button variant="outline" onClick={() => setStep("payees")}>Back to payees</Button>
               <Button onClick={onSave} disabled={saving}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save transactions
