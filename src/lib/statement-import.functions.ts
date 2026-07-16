@@ -33,6 +33,13 @@ export const parseStatement = createServerFn({ method: "POST" })
       .eq("household_id", householdId);
     const categoryList = (cats ?? []).map((c: any) => c.name).join(", ");
 
+    // Load existing memorized payees so AI can reuse names
+    const { data: existingPayees } = await context.supabase
+      .from("memorized_payees")
+      .select("id, merchant, category_id")
+      .eq("household_id", householdId);
+    const payeeList = (existingPayees ?? []).map((p: any) => p.merchant).join(", ");
+
     const lower = data.fileName.toLowerCase();
     const isPdf = data.mimeType === "application/pdf" || lower.endsWith(".pdf");
     const isExcel =
@@ -57,47 +64,54 @@ export const parseStatement = createServerFn({ method: "POST" })
       textContent = Buffer.from(data.base64, "base64").toString("utf-8");
     }
 
-    // Truncate to prevent huge prompts
     if (textContent.length > 60000) textContent = textContent.slice(0, 60000);
 
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
 
-    const systemPrompt = `You extract bank/credit-card statement transactions and categorize them.
+    const systemPrompt = `You extract bank/credit-card statement transactions, categorize them, and cluster descriptions by merchant/vendor.
 Bank: ${data.bank}
 Available categories: ${categoryList}
+Existing memorized payees (reuse EXACT spelling when a description matches one of these): ${payeeList || "(none)"}
 
 Return ONLY valid JSON matching this shape:
 {
   "transactions": [
     {
       "date": "YYYY-MM-DD",
-      "description": "raw narration/description",
+      "description": "raw narration/description from statement",
       "amount": 1234.56,
       "type": "income" | "expense" | "transfer",
-      "suggestedCategory": "one of the available categories or a reasonable new name"
+      "suggestedCategory": "one of the available categories or a reasonable new name",
+      "payee": "clean merchant/vendor name for this transaction"
+    }
+  ],
+  "payees": [
+    {
+      "name": "clean merchant/vendor name (title case, human friendly, e.g. 'Amazon', 'Netflix', 'Uber')",
+      "descriptions": ["raw description 1", "raw description 2"],
+      "suggestedCategory": "best matching category",
+      "type": "expense" | "income" | "transfer",
+      "isExisting": true | false
     }
   ]
 }
 Rules:
 - amount is always positive
-- type: money in => income, money out => expense, transfers between own accounts => transfer
+- type: money in => income, money out => expense, transfers => transfer
 - Ignore opening/closing balance rows, headers, footers
-- Use ISO date format
+- Cluster descriptions belonging to the SAME real-world merchant into ONE payee entry (e.g. "AMZN Mktp IN*A12BC", "AMAZON PAY INDIA", "AMZ*SELLERXYZ" => one payee "Amazon")
+- Every transaction's "payee" must equal exactly one payee entry's "name"
+- If a description clearly matches an existing memorized payee, use that exact name and set isExisting=true
+- Use short, clean, human-readable payee names — strip transaction ids, city codes, POS terminal numbers
 - Do not invent transactions`;
 
     const userParts: any[] = [];
     if (isPdf) {
-      userParts.push({
-        type: "text",
-        text: "Extract transactions from this statement PDF.",
-      });
+      userParts.push({ type: "text", text: "Extract transactions and cluster payees from this statement PDF." });
       userParts.push({
         type: "file",
-        file: {
-          filename: data.fileName,
-          file_data: `data:application/pdf;base64,${data.base64}`,
-        },
+        file: { filename: data.fileName, file_data: `data:application/pdf;base64,${data.base64}` },
       });
     } else {
       userParts.push({
@@ -106,7 +120,7 @@ Rules:
       });
     }
 
-    const model = isPdf ? "google/gemini-2.5-flash" : "openai/gpt-5.5";
+    const model = isPdf ? "google/gemini-2.5-flash" : "google/gemini-2.5-flash";
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -135,9 +149,31 @@ Rules:
       parsed = JSON.parse(content);
     } catch {
       const match = content.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : { transactions: [] };
+      parsed = match ? JSON.parse(match[0]) : { transactions: [], payees: [] };
     }
     const txns = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+    let payees = Array.isArray(parsed.payees) ? parsed.payees : [];
+
+    // Fallback: if AI omitted payees, derive from unique descriptions
+    if (!payees.length && txns.length) {
+      const seen = new Map<string, any>();
+      for (const t of txns) {
+        const name = t.payee || t.description || "Unknown";
+        if (!seen.has(name)) {
+          seen.set(name, {
+            name,
+            descriptions: [t.description],
+            suggestedCategory: t.suggestedCategory,
+            type: t.type,
+            isExisting: false,
+          });
+        } else {
+          seen.get(name).descriptions.push(t.description);
+        }
+      }
+      payees = Array.from(seen.values());
+    }
+
     return {
       transactions: txns as Array<{
         date: string;
@@ -145,8 +181,17 @@ Rules:
         amount: number;
         type: "income" | "expense" | "transfer";
         suggestedCategory: string;
+        payee: string;
+      }>,
+      payees: payees as Array<{
+        name: string;
+        descriptions: string[];
+        suggestedCategory: string;
+        type: "expense" | "income" | "transfer";
+        isExisting: boolean;
       }>,
       categories: (cats ?? []) as Array<{ id: string; name: string; kind: string; parent_id: string | null }>,
+      existingPayees: (existingPayees ?? []) as Array<{ id: string; merchant: string; category_id: string | null }>,
     };
   });
 
@@ -159,11 +204,21 @@ const bulkInput = z.object({
         amount: z.number().positive(),
         type: z.enum(["income", "expense", "transfer"]),
         category_id: z.string().uuid().nullable().optional(),
+        merchant: z.string().max(200).nullable().optional(),
         note: z.string().max(500).optional().nullable(),
       }),
     )
     .min(1)
     .max(500),
+  newPayees: z
+    .array(
+      z.object({
+        merchant: z.string().min(1).max(200),
+        category_id: z.string().uuid().nullable().optional(),
+        txn_type: z.enum(["expense", "income", "transfer"]).default("expense"),
+      }),
+    )
+    .default([]),
 });
 
 export const bulkInsertTransactions = createServerFn({ method: "POST" })
@@ -171,6 +226,36 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => bulkInput.parse(d))
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
+
+    // Create new memorized payees (skip if merchant already exists)
+    if (data.newPayees.length) {
+      const names = data.newPayees.map((p) => p.merchant);
+      const { data: existing } = await context.supabase
+        .from("memorized_payees")
+        .select("merchant")
+        .eq("household_id", householdId)
+        .in("merchant", names);
+      const existingSet = new Set((existing ?? []).map((r: any) => r.merchant));
+      const rows = data.newPayees
+        .filter((p) => !existingSet.has(p.merchant))
+        .map((p) => ({
+          merchant: p.merchant,
+          category_id: p.category_id ?? null,
+          txn_type: p.txn_type,
+          household_id: householdId,
+          created_by: context.userId,
+          modified_by: context.userId,
+          tags: [],
+          splits: [],
+          restrict_account_ids: [],
+          currency: "INR",
+        }));
+      if (rows.length) {
+        const { error } = await context.supabase.from("memorized_payees").insert(rows);
+        if (error) throw error;
+      }
+    }
+
     const rows = data.transactions.map((t) => ({
       ...t,
       account_id: data.accountId,
