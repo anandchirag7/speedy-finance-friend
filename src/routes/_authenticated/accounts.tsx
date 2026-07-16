@@ -81,9 +81,10 @@ function AccountsPage() {
                   const def = ACCOUNT_TYPE_BY_CATEGORY[a.category as keyof typeof ACCOUNT_TYPE_BY_CATEGORY];
                   const bal = Number(a.current_balance);
                   return (
-                    <Card key={a.id} className="group">
+                    <Card key={a.id} className="group transition hover:shadow-md hover:border-primary/40">
                       <CardContent className="pt-5">
-                        <div className="flex items-start justify-between gap-2">
+                        <Link to="/accounts/$accountId" params={{ accountId: a.id }} className="absolute inset-0 z-0" aria-label={`Open ${a.name}`} />
+                        <div className="relative z-10 flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="truncate font-medium">{a.name}</p>
