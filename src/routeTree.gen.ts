@@ -25,6 +25,7 @@ import { Route as AuthenticatedBillsRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
+import { Route as AuthenticatedAccountsAccountIdRouteImport } from './routes/_authenticated/accounts.$accountId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -108,11 +109,17 @@ const AuthenticatedChatThreadIdRoute =
     path: '/$threadId',
     getParentRoute: () => AuthenticatedChatRoute,
   } as any)
+const AuthenticatedAccountsAccountIdRoute =
+  AuthenticatedAccountsAccountIdRouteImport.update({
+    id: '/$accountId',
+    path: '/$accountId',
+    getParentRoute: () => AuthenticatedAccountsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/auth': typeof AuthRoute
-  '/accounts': typeof AuthenticatedAccountsRoute
+  '/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/bills': typeof AuthenticatedBillsRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
   '/categories': typeof AuthenticatedCategoriesRoute
@@ -123,12 +130,13 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/transactions': typeof AuthenticatedTransactionsRoute
   '/api/chat': typeof ApiChatRoute
+  '/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
-  '/accounts': typeof AuthenticatedAccountsRoute
+  '/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/bills': typeof AuthenticatedBillsRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
   '/categories': typeof AuthenticatedCategoriesRoute
@@ -139,6 +147,7 @@ export interface FileRoutesByTo {
   '/transactions': typeof AuthenticatedTransactionsRoute
   '/api/chat': typeof ApiChatRoute
   '/': typeof AuthenticatedIndexRoute
+  '/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat': typeof AuthenticatedChatIndexRoute
 }
@@ -146,7 +155,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/_authenticated/accounts': typeof AuthenticatedAccountsRoute
+  '/_authenticated/accounts': typeof AuthenticatedAccountsRouteWithChildren
   '/_authenticated/bills': typeof AuthenticatedBillsRoute
   '/_authenticated/budgets': typeof AuthenticatedBudgetsRoute
   '/_authenticated/categories': typeof AuthenticatedCategoriesRoute
@@ -158,6 +167,7 @@ export interface FileRoutesById {
   '/_authenticated/transactions': typeof AuthenticatedTransactionsRoute
   '/api/chat': typeof ApiChatRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
 }
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/transactions'
     | '/api/chat'
+    | '/accounts/$accountId'
     | '/chat/$threadId'
     | '/chat/'
   fileRoutesByTo: FileRoutesByTo
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/transactions'
     | '/api/chat'
     | '/'
+    | '/accounts/$accountId'
     | '/chat/$threadId'
     | '/chat'
   id:
@@ -211,6 +223,7 @@ export interface FileRouteTypes {
     | '/_authenticated/transactions'
     | '/api/chat'
     | '/_authenticated/'
+    | '/_authenticated/accounts/$accountId'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/chat/'
   fileRoutesById: FileRoutesById
@@ -335,8 +348,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
       parentRoute: typeof AuthenticatedChatRoute
     }
+    '/_authenticated/accounts/$accountId': {
+      id: '/_authenticated/accounts/$accountId'
+      path: '/$accountId'
+      fullPath: '/accounts/$accountId'
+      preLoaderRoute: typeof AuthenticatedAccountsAccountIdRouteImport
+      parentRoute: typeof AuthenticatedAccountsRoute
+    }
   }
 }
+
+interface AuthenticatedAccountsRouteChildren {
+  AuthenticatedAccountsAccountIdRoute: typeof AuthenticatedAccountsAccountIdRoute
+}
+
+const AuthenticatedAccountsRouteChildren: AuthenticatedAccountsRouteChildren = {
+  AuthenticatedAccountsAccountIdRoute: AuthenticatedAccountsAccountIdRoute,
+}
+
+const AuthenticatedAccountsRouteWithChildren =
+  AuthenticatedAccountsRoute._addFileChildren(
+    AuthenticatedAccountsRouteChildren,
+  )
 
 interface AuthenticatedChatRouteChildren {
   AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
@@ -352,7 +385,7 @@ const AuthenticatedChatRouteWithChildren =
   AuthenticatedChatRoute._addFileChildren(AuthenticatedChatRouteChildren)
 
 interface AuthenticatedRouteRouteChildren {
-  AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRoute
+  AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRouteWithChildren
   AuthenticatedBillsRoute: typeof AuthenticatedBillsRoute
   AuthenticatedBudgetsRoute: typeof AuthenticatedBudgetsRoute
   AuthenticatedCategoriesRoute: typeof AuthenticatedCategoriesRoute
@@ -366,7 +399,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedAccountsRoute: AuthenticatedAccountsRoute,
+  AuthenticatedAccountsRoute: AuthenticatedAccountsRouteWithChildren,
   AuthenticatedBillsRoute: AuthenticatedBillsRoute,
   AuthenticatedBudgetsRoute: AuthenticatedBudgetsRoute,
   AuthenticatedCategoriesRoute: AuthenticatedCategoriesRoute,
