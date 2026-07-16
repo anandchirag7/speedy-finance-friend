@@ -150,6 +150,7 @@ function PayeesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sort, setSort] = useState<string>("alpha");
   const [confirmDel, setConfirmDel] = useState<string[] | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["memorized-payees"] });
