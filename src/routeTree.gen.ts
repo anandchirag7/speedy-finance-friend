@@ -25,6 +25,7 @@ import { Route as AuthenticatedBillsRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
+import { Route as AuthenticatedAccountsAccountIdRouteImport } from './routes/_authenticated/accounts_.$accountId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -108,6 +109,12 @@ const AuthenticatedChatThreadIdRoute =
     path: '/$threadId',
     getParentRoute: () => AuthenticatedChatRoute,
   } as any)
+const AuthenticatedAccountsAccountIdRoute =
+  AuthenticatedAccountsAccountIdRouteImport.update({
+    id: '/accounts_/$accountId',
+    path: '/accounts/$accountId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/transactions': typeof AuthenticatedTransactionsRoute
   '/api/chat': typeof ApiChatRoute
+  '/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
 }
@@ -139,6 +147,7 @@ export interface FileRoutesByTo {
   '/transactions': typeof AuthenticatedTransactionsRoute
   '/api/chat': typeof ApiChatRoute
   '/': typeof AuthenticatedIndexRoute
+  '/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat': typeof AuthenticatedChatIndexRoute
 }
@@ -158,6 +167,7 @@ export interface FileRoutesById {
   '/_authenticated/transactions': typeof AuthenticatedTransactionsRoute
   '/api/chat': typeof ApiChatRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
+  '/_authenticated/accounts_/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
 }
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/transactions'
     | '/api/chat'
+    | '/accounts/$accountId'
     | '/chat/$threadId'
     | '/chat/'
   fileRoutesByTo: FileRoutesByTo
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/transactions'
     | '/api/chat'
     | '/'
+    | '/accounts/$accountId'
     | '/chat/$threadId'
     | '/chat'
   id:
@@ -211,6 +223,7 @@ export interface FileRouteTypes {
     | '/_authenticated/transactions'
     | '/api/chat'
     | '/_authenticated/'
+    | '/_authenticated/accounts_/$accountId'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/chat/'
   fileRoutesById: FileRoutesById
@@ -335,6 +348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
       parentRoute: typeof AuthenticatedChatRoute
     }
+    '/_authenticated/accounts_/$accountId': {
+      id: '/_authenticated/accounts_/$accountId'
+      path: '/accounts/$accountId'
+      fullPath: '/accounts/$accountId'
+      preLoaderRoute: typeof AuthenticatedAccountsAccountIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -363,6 +383,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTransactionsRoute: typeof AuthenticatedTransactionsRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedAccountsAccountIdRoute: typeof AuthenticatedAccountsAccountIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -377,6 +398,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTransactionsRoute: AuthenticatedTransactionsRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedAccountsAccountIdRoute: AuthenticatedAccountsAccountIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -390,3 +412,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
