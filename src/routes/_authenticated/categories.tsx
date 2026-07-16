@@ -417,57 +417,38 @@ function CategoriesPage() {
                           </td>
                         </tr>
                       ) : (
-                        tree.roots.flatMap((root) => {
-                          const children = tree.kids.get(root.id) ?? [];
-                          const isOpen = expanded[root.id];
-                          const rows = [
-                            <Row
-                              key={root.id}
-                              cat={root}
-                              level={0}
-                              hasChildren={children.length > 0}
-                              open={isOpen}
-                              selected={!!selected[root.id]}
-                              onToggleOpen={() =>
-                                setExpanded((e) => ({ ...e, [root.id]: !e[root.id] }))
-                              }
-                              onSelect={(v) =>
-                                setSelected((s) => ({ ...s, [root.id]: v }))
-                              }
-                              onEdit={() => setEditing(root)}
-                              onDuplicate={() => dupMut.mutate(root.id)}
-                              onDelete={() => setDeleteTarget(root)}
-                              onToggleHidden={(v) =>
-                                hideMut.mutate({ id: root.id, is_hidden: v })
-                              }
-                            />,
-                          ];
-                          if (isOpen) {
-                            for (const ch of children) {
-                              rows.push(
-                                <Row
-                                  key={ch.id}
-                                  cat={ch}
-                                  level={1}
-                                  hasChildren={false}
-                                  open={false}
-                                  selected={!!selected[ch.id]}
-                                  onToggleOpen={() => {}}
-                                  onSelect={(v) =>
-                                    setSelected((s) => ({ ...s, [ch.id]: v }))
-                                  }
-                                  onEdit={() => setEditing(ch)}
-                                  onDuplicate={() => dupMut.mutate(ch.id)}
-                                  onDelete={() => setDeleteTarget(ch)}
-                                  onToggleHidden={(v) =>
-                                    hideMut.mutate({ id: ch.id, is_hidden: v })
-                                  }
-                                />,
-                              );
-                            }
-                          }
+                        (() => {
+                          const rows: React.ReactNode[] = [];
+                          const walk = (node: Cat, level: number) => {
+                            const children = tree.kids.get(node.id) ?? [];
+                            const isOpen = !!expanded[node.id];
+                            rows.push(
+                              <Row
+                                key={node.id}
+                                cat={node}
+                                level={level}
+                                hasChildren={children.length > 0}
+                                open={isOpen}
+                                selected={!!selected[node.id]}
+                                onToggleOpen={() =>
+                                  setExpanded((e) => ({ ...e, [node.id]: !e[node.id] }))
+                                }
+                                onSelect={(v) =>
+                                  setSelected((s) => ({ ...s, [node.id]: v }))
+                                }
+                                onEdit={() => setEditing(node)}
+                                onDuplicate={() => dupMut.mutate(node.id)}
+                                onDelete={() => setDeleteTarget(node)}
+                                onToggleHidden={(v) =>
+                                  hideMut.mutate({ id: node.id, is_hidden: v })
+                                }
+                              />,
+                            );
+                            if (isOpen) for (const ch of children) walk(ch, level + 1);
+                          };
+                          for (const root of tree.roots) walk(root, 0);
                           return rows;
-                        })
+                        })()
                       )}
                     </tbody>
                   </table>
@@ -485,37 +466,30 @@ function CategoriesPage() {
                 ) : totalRows === 0 ? (
                   <EmptyState onAdd={() => setEditing({ name: "", kind: "expense", scope: "personal", is_hidden: false })} />
                 ) : (
-                  tree.roots.map((root) => {
-                    const children = tree.kids.get(root.id) ?? [];
-                    const isOpen = expanded[root.id];
-                    return (
-                      <div key={root.id}>
-                        <MobileRow
-                          cat={root}
-                          hasChildren={children.length > 0}
-                          open={isOpen}
-                          onToggle={() =>
-                            setExpanded((e) => ({ ...e, [root.id]: !e[root.id] }))
-                          }
-                          onEdit={() => setEditing(root)}
-                          onDelete={() => setDeleteTarget(root)}
-                        />
-                        {isOpen &&
-                          children.map((ch) => (
-                            <div key={ch.id} className="pl-6">
-                              <MobileRow
-                                cat={ch}
-                                hasChildren={false}
-                                open={false}
-                                onToggle={() => {}}
-                                onEdit={() => setEditing(ch)}
-                                onDelete={() => setDeleteTarget(ch)}
-                              />
-                            </div>
-                          ))}
-                      </div>
-                    );
-                  })
+                  (() => {
+                    const nodes: React.ReactNode[] = [];
+                    const walk = (node: Cat, level: number) => {
+                      const children = tree.kids.get(node.id) ?? [];
+                      const isOpen = !!expanded[node.id];
+                      nodes.push(
+                        <div key={node.id} style={{ paddingLeft: level * 16 }}>
+                          <MobileRow
+                            cat={node}
+                            hasChildren={children.length > 0}
+                            open={isOpen}
+                            onToggle={() =>
+                              setExpanded((e) => ({ ...e, [node.id]: !e[node.id] }))
+                            }
+                            onEdit={() => setEditing(node)}
+                            onDelete={() => setDeleteTarget(node)}
+                          />
+                        </div>,
+                      );
+                      if (isOpen) for (const ch of children) walk(ch, level + 1);
+                    };
+                    for (const root of tree.roots) walk(root, 0);
+                    return nodes;
+                  })()
                 )}
               </div>
             </div>
@@ -985,18 +959,56 @@ function EditDialog({
         ? "A category with this name already exists"
         : null;
 
-  // Parent options for subcategory mode
+  // Parent options for subcategory mode — any category except self and its descendants
   const parentGroups = useMemo(() => {
     const q = parentQuery.trim().toLowerCase();
-    const eligible = allCategories.filter(
-      (c) => c.id !== form.id && !c.parent_id && (!q || c.name.toLowerCase().includes(q)),
-    );
-    const groups: Record<string, Cat[]> = {};
+    // Build descendant set to prevent cycles when editing an existing category
+    const descendants = new Set<string>();
+    if (form.id) {
+      const childrenOf = (pid: string) => allCategories.filter((c) => c.parent_id === pid);
+      const stack = [form.id];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const ch of childrenOf(cur)) {
+          if (!descendants.has(ch.id)) {
+            descendants.add(ch.id);
+            stack.push(ch.id);
+          }
+        }
+      }
+    }
+    const nameById = new Map(allCategories.map((c) => [c.id, c.name] as const));
+    const pathOf = (c: Cat): string => {
+      const parts = [c.name];
+      let p = c.parent_id;
+      while (p) {
+        const parent = allCategories.find((x) => x.id === p);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        p = parent.parent_id;
+      }
+      return parts.join(" › ");
+    };
+    const eligible = allCategories
+      .filter(
+        (c) =>
+          c.id !== form.id &&
+          !descendants.has(c.id) &&
+          (!q ||
+            c.name.toLowerCase().includes(q) ||
+            pathOf(c).toLowerCase().includes(q)),
+      )
+      .map((c) => ({ ...c, __path: pathOf(c) }));
+    const groups: Record<string, (Cat & { __path: string })[]> = {};
     for (const c of eligible) {
       (groups[c.kind] ||= []).push(c);
     }
+    // sort each group by path for a tidy tree order
+    for (const k of Object.keys(groups)) groups[k].sort((a, b) => a.__path.localeCompare(b.__path));
+    void nameById;
     return groups;
   }, [allCategories, parentQuery, form.id]);
+
 
   const selectedParent = allCategories.find((c) => c.id === form.parent_id);
   const description = form.description ?? "";
@@ -1183,7 +1195,7 @@ function EditDialog({
                                 {list.map((p) => (
                                   <CommandItem
                                     key={p.id}
-                                    value={`${p.kind}:${p.name}`}
+                                    value={`${p.kind}:${p.__path}`}
                                     onSelect={() => {
                                       update({ parent_id: p.id, kind: p.kind });
                                       setParentOpen(false);
@@ -1197,7 +1209,18 @@ function EditDialog({
                                     >
                                       {p.kind}
                                     </span>
-                                    {p.name}
+                                    <span className="truncate">
+                                      {p.__path.includes(" › ") ? (
+                                        <>
+                                          <span className="text-muted-foreground">
+                                            {p.__path.split(" › ").slice(0, -1).join(" › ")} ›{" "}
+                                          </span>
+                                          <span className="font-medium">{p.name}</span>
+                                        </>
+                                      ) : (
+                                        <span className="font-medium">{p.name}</span>
+                                      )}
+                                    </span>
                                   </CommandItem>
                                 ))}
                               </CommandGroup>
