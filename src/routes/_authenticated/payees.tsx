@@ -239,18 +239,7 @@ function PayeesPage() {
     });
   };
 
-  const handleCreate = () => {
-    createMut.mutate({
-      merchant: "New payee",
-      txn_type: "expense",
-      tags: [],
-      splits: [],
-      currency: "INR",
-      restrict_account_ids: [],
-      auto_categorize: true,
-      priority: 0,
-    });
-  };
+  const handleCreate = () => setCreateOpen(true);
 
   const handleExport = () => {
     const rows = payees.data ?? [];
