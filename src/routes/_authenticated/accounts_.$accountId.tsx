@@ -541,7 +541,7 @@ function AccountRegisterPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-[57px] z-10 bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
+                <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground border-b">
                   <tr>
                     <th className="w-9 px-3 py-2 text-left">
                       <Checkbox
