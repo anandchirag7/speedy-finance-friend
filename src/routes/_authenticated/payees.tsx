@@ -705,10 +705,10 @@ function EmptyState({ hasFilters, onCreate }: { hasFilters: boolean; onCreate: (
 /* ---------- Details panel ---------- */
 
 function DetailsPanel({
-  payee,
+  payee: payeeProp,
   cats,
   accts,
-  onPatch,
+  onPatch: onPatchProp,
   onDelete,
   onDuplicate,
   saving,
@@ -721,6 +721,42 @@ function DetailsPanel({
   onDuplicate: () => void;
   saving: boolean;
 }) {
+  // Local draft overlay + debounced flush so typing doesn't hit the server on every keystroke.
+  const [draft, setDraft] = useState<Record<string, any>>({});
+  const pending = useRef<Record<string, any>>({});
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPatchRef = useRef(onPatchProp);
+  useEffect(() => { onPatchRef.current = onPatchProp; }, [onPatchProp]);
+
+  const flush = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    const p = pending.current;
+    if (p && Object.keys(p).length) {
+      onPatchRef.current(p);
+      pending.current = {};
+      setDraft({});
+    }
+  };
+
+  // Flush and reset when switching to a different payee.
+  useEffect(() => {
+    flush();
+    setDraft({});
+    pending.current = {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payeeProp.id]);
+
+  // Flush on unmount.
+  useEffect(() => () => flush(), []);
+
+  const payee = { ...payeeProp, ...draft } as Payee;
+  const onPatch = (patch: any) => {
+    setDraft((d) => ({ ...d, ...patch }));
+    pending.current = { ...pending.current, ...patch };
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(flush, 600);
+  };
+
   const type = TXN_TYPES.find((t) => t.value === payee.txn_type) ?? TXN_TYPES[0];
   const TIcon = type.icon;
   const [tagInput, setTagInput] = useState("");
@@ -731,6 +767,7 @@ function DetailsPanel({
     onPatch({ tags: [...(payee.tags ?? []), v] });
     setTagInput("");
   };
+
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-6">
