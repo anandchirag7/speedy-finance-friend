@@ -227,38 +227,53 @@ export type Database = {
         Row: {
           color: string | null
           created_at: string
+          description: string | null
+          group_label: string | null
           household_id: string
           icon: string | null
           id: string
+          is_hidden: boolean
           is_system: boolean
           kind: string
           name: string
           parent_id: string | null
+          scope: string
           sort_order: number
+          tax_code: string | null
         }
         Insert: {
           color?: string | null
           created_at?: string
+          description?: string | null
+          group_label?: string | null
           household_id: string
           icon?: string | null
           id?: string
+          is_hidden?: boolean
           is_system?: boolean
           kind?: string
           name: string
           parent_id?: string | null
+          scope?: string
           sort_order?: number
+          tax_code?: string | null
         }
         Update: {
           color?: string | null
           created_at?: string
+          description?: string | null
+          group_label?: string | null
           household_id?: string
           icon?: string | null
           id?: string
+          is_hidden?: boolean
           is_system?: boolean
           kind?: string
           name?: string
           parent_id?: string | null
+          scope?: string
           sort_order?: number
+          tax_code?: string | null
         }
         Relationships: [
           {
