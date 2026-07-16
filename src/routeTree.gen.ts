@@ -19,6 +19,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedInvestmentsRouteImport } from './routes/_authenticated/investments'
 import { Route as AuthenticatedGoalsRouteImport } from './routes/_authenticated/goals'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
+import { Route as AuthenticatedCategoriesRouteImport } from './routes/_authenticated/categories'
 import { Route as AuthenticatedBudgetsRouteImport } from './routes/_authenticated/budgets'
 import { Route as AuthenticatedBillsRouteImport } from './routes/_authenticated/bills'
 import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticated/accounts'
@@ -76,6 +77,11 @@ const AuthenticatedChatRoute = AuthenticatedChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCategoriesRoute = AuthenticatedCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedBudgetsRoute = AuthenticatedBudgetsRouteImport.update({
   id: '/budgets',
   path: '/budgets',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/accounts': typeof AuthenticatedAccountsRoute
   '/bills': typeof AuthenticatedBillsRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
+  '/categories': typeof AuthenticatedCategoriesRoute
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/goals': typeof AuthenticatedGoalsRoute
   '/investments': typeof AuthenticatedInvestmentsRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/accounts': typeof AuthenticatedAccountsRoute
   '/bills': typeof AuthenticatedBillsRoute
   '/budgets': typeof AuthenticatedBudgetsRoute
+  '/categories': typeof AuthenticatedCategoriesRoute
   '/goals': typeof AuthenticatedGoalsRoute
   '/investments': typeof AuthenticatedInvestmentsRoute
   '/reports': typeof AuthenticatedReportsRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/_authenticated/accounts': typeof AuthenticatedAccountsRoute
   '/_authenticated/bills': typeof AuthenticatedBillsRoute
   '/_authenticated/budgets': typeof AuthenticatedBudgetsRoute
+  '/_authenticated/categories': typeof AuthenticatedCategoriesRoute
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/goals': typeof AuthenticatedGoalsRoute
   '/_authenticated/investments': typeof AuthenticatedInvestmentsRoute
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/bills'
     | '/budgets'
+    | '/categories'
     | '/chat'
     | '/goals'
     | '/investments'
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/bills'
     | '/budgets'
+    | '/categories'
     | '/goals'
     | '/investments'
     | '/reports'
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/_authenticated/accounts'
     | '/_authenticated/bills'
     | '/_authenticated/budgets'
+    | '/_authenticated/categories'
     | '/_authenticated/chat'
     | '/_authenticated/goals'
     | '/_authenticated/investments'
@@ -281,6 +293,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/categories': {
+      id: '/_authenticated/categories'
+      path: '/categories'
+      fullPath: '/categories'
+      preLoaderRoute: typeof AuthenticatedCategoriesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/budgets': {
       id: '/_authenticated/budgets'
       path: '/budgets'
@@ -336,6 +355,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAccountsRoute: typeof AuthenticatedAccountsRoute
   AuthenticatedBillsRoute: typeof AuthenticatedBillsRoute
   AuthenticatedBudgetsRoute: typeof AuthenticatedBudgetsRoute
+  AuthenticatedCategoriesRoute: typeof AuthenticatedCategoriesRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedGoalsRoute: typeof AuthenticatedGoalsRoute
   AuthenticatedInvestmentsRoute: typeof AuthenticatedInvestmentsRoute
@@ -349,6 +369,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAccountsRoute: AuthenticatedAccountsRoute,
   AuthenticatedBillsRoute: AuthenticatedBillsRoute,
   AuthenticatedBudgetsRoute: AuthenticatedBudgetsRoute,
+  AuthenticatedCategoriesRoute: AuthenticatedCategoriesRoute,
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedGoalsRoute: AuthenticatedGoalsRoute,
   AuthenticatedInvestmentsRoute: AuthenticatedInvestmentsRoute,
