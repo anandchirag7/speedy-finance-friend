@@ -810,6 +810,13 @@ function DetailsPanel({
       <div className="space-y-3">
         <Section title="General information" defaultOpen>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Payee name" className="sm:col-span-2">
+              <Input
+                value={payee.merchant ?? ""}
+                onChange={(e) => onPatch({ merchant: e.target.value })}
+                placeholder="e.g., Netflix, Amazon, Landlord"
+              />
+            </Field>
             <Field label="Merchant type">
               <Input
                 value={payee.merchant_type ?? ""}
