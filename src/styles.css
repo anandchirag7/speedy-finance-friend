@@ -157,3 +157,57 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ---- Precision workspace theme (Transactions) ---- */
+/* Graphite + Emerald, JetBrains Mono for numerals. Scoped via `.precision-workspace`. */
+.precision-workspace {
+  --background: oklch(0.16 0.008 240);
+  --foreground: oklch(0.94 0.008 240);
+  --card: oklch(0.205 0.01 240);
+  --card-foreground: oklch(0.96 0.008 240);
+  --popover: oklch(0.205 0.01 240);
+  --popover-foreground: oklch(0.96 0.008 240);
+  --primary: oklch(0.74 0.16 158);
+  --primary-foreground: oklch(0.14 0.02 158);
+  --secondary: oklch(0.25 0.01 240);
+  --secondary-foreground: oklch(0.95 0.008 240);
+  --muted: oklch(0.235 0.008 240);
+  --muted-foreground: oklch(0.68 0.015 240);
+  --accent: oklch(0.28 0.02 240);
+  --accent-foreground: oklch(0.96 0.008 240);
+  --destructive: oklch(0.66 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --success: oklch(0.74 0.16 158);
+  --success-foreground: oklch(0.14 0.02 158);
+  --warning: oklch(0.78 0.16 70);
+  --warning-foreground: oklch(0.18 0.04 60);
+  --border: oklch(1 0 0 / 6%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.74 0.16 158);
+  --chart-1: oklch(0.74 0.16 158);
+  --chart-2: oklch(0.78 0.15 75);
+  --chart-3: oklch(0.68 0.16 40);
+  --chart-4: oklch(0.62 0.16 260);
+  --chart-5: oklch(0.72 0.14 200);
+  --chart-6: oklch(0.66 0.18 320);
+  --chart-7: oklch(0.6 0.08 100);
+  --radius: 0.75rem;
+  color: var(--foreground);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, oklch(0.74 0.16 158 / 0.06), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, oklch(0.62 0.16 260 / 0.05), transparent 60%),
+    var(--background);
+}
+.precision-workspace .tabular-nums,
+.precision-workspace .font-mono,
+.precision-workspace [class*="font-['JetBrains"] {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.precision-workspace h1,
+.precision-workspace h2,
+.precision-workspace h3 {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
