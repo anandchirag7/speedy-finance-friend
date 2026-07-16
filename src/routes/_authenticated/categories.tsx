@@ -417,57 +417,38 @@ function CategoriesPage() {
                           </td>
                         </tr>
                       ) : (
-                        tree.roots.flatMap((root) => {
-                          const children = tree.kids.get(root.id) ?? [];
-                          const isOpen = expanded[root.id];
-                          const rows = [
-                            <Row
-                              key={root.id}
-                              cat={root}
-                              level={0}
-                              hasChildren={children.length > 0}
-                              open={isOpen}
-                              selected={!!selected[root.id]}
-                              onToggleOpen={() =>
-                                setExpanded((e) => ({ ...e, [root.id]: !e[root.id] }))
-                              }
-                              onSelect={(v) =>
-                                setSelected((s) => ({ ...s, [root.id]: v }))
-                              }
-                              onEdit={() => setEditing(root)}
-                              onDuplicate={() => dupMut.mutate(root.id)}
-                              onDelete={() => setDeleteTarget(root)}
-                              onToggleHidden={(v) =>
-                                hideMut.mutate({ id: root.id, is_hidden: v })
-                              }
-                            />,
-                          ];
-                          if (isOpen) {
-                            for (const ch of children) {
-                              rows.push(
-                                <Row
-                                  key={ch.id}
-                                  cat={ch}
-                                  level={1}
-                                  hasChildren={false}
-                                  open={false}
-                                  selected={!!selected[ch.id]}
-                                  onToggleOpen={() => {}}
-                                  onSelect={(v) =>
-                                    setSelected((s) => ({ ...s, [ch.id]: v }))
-                                  }
-                                  onEdit={() => setEditing(ch)}
-                                  onDuplicate={() => dupMut.mutate(ch.id)}
-                                  onDelete={() => setDeleteTarget(ch)}
-                                  onToggleHidden={(v) =>
-                                    hideMut.mutate({ id: ch.id, is_hidden: v })
-                                  }
-                                />,
-                              );
-                            }
-                          }
+                        (() => {
+                          const rows: React.ReactNode[] = [];
+                          const walk = (node: Cat, level: number) => {
+                            const children = tree.kids.get(node.id) ?? [];
+                            const isOpen = !!expanded[node.id];
+                            rows.push(
+                              <Row
+                                key={node.id}
+                                cat={node}
+                                level={level}
+                                hasChildren={children.length > 0}
+                                open={isOpen}
+                                selected={!!selected[node.id]}
+                                onToggleOpen={() =>
+                                  setExpanded((e) => ({ ...e, [node.id]: !e[node.id] }))
+                                }
+                                onSelect={(v) =>
+                                  setSelected((s) => ({ ...s, [node.id]: v }))
+                                }
+                                onEdit={() => setEditing(node)}
+                                onDuplicate={() => dupMut.mutate(node.id)}
+                                onDelete={() => setDeleteTarget(node)}
+                                onToggleHidden={(v) =>
+                                  hideMut.mutate({ id: node.id, is_hidden: v })
+                                }
+                              />,
+                            );
+                            if (isOpen) for (const ch of children) walk(ch, level + 1);
+                          };
+                          for (const root of tree.roots) walk(root, 0);
                           return rows;
-                        })
+                        })()
                       )}
                     </tbody>
                   </table>
