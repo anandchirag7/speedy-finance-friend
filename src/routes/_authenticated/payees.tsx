@@ -507,6 +507,19 @@ function PayeesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PayeeFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        cats={cats.data ?? []}
+        accts={accts.data ?? []}
+        saving={createMut.isPending}
+        onSubmit={(data) => {
+          createMut.mutate(data, {
+            onSuccess: () => setCreateOpen(false),
+          });
+        }}
+      />
     </div>
   );
 }
