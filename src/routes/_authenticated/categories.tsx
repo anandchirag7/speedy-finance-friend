@@ -466,37 +466,30 @@ function CategoriesPage() {
                 ) : totalRows === 0 ? (
                   <EmptyState onAdd={() => setEditing({ name: "", kind: "expense", scope: "personal", is_hidden: false })} />
                 ) : (
-                  tree.roots.map((root) => {
-                    const children = tree.kids.get(root.id) ?? [];
-                    const isOpen = expanded[root.id];
-                    return (
-                      <div key={root.id}>
-                        <MobileRow
-                          cat={root}
-                          hasChildren={children.length > 0}
-                          open={isOpen}
-                          onToggle={() =>
-                            setExpanded((e) => ({ ...e, [root.id]: !e[root.id] }))
-                          }
-                          onEdit={() => setEditing(root)}
-                          onDelete={() => setDeleteTarget(root)}
-                        />
-                        {isOpen &&
-                          children.map((ch) => (
-                            <div key={ch.id} className="pl-6">
-                              <MobileRow
-                                cat={ch}
-                                hasChildren={false}
-                                open={false}
-                                onToggle={() => {}}
-                                onEdit={() => setEditing(ch)}
-                                onDelete={() => setDeleteTarget(ch)}
-                              />
-                            </div>
-                          ))}
-                      </div>
-                    );
-                  })
+                  (() => {
+                    const nodes: React.ReactNode[] = [];
+                    const walk = (node: Cat, level: number) => {
+                      const children = tree.kids.get(node.id) ?? [];
+                      const isOpen = !!expanded[node.id];
+                      nodes.push(
+                        <div key={node.id} style={{ paddingLeft: level * 16 }}>
+                          <MobileRow
+                            cat={node}
+                            hasChildren={children.length > 0}
+                            open={isOpen}
+                            onToggle={() =>
+                              setExpanded((e) => ({ ...e, [node.id]: !e[node.id] }))
+                            }
+                            onEdit={() => setEditing(node)}
+                            onDelete={() => setDeleteTarget(node)}
+                          />
+                        </div>,
+                      );
+                      if (isOpen) for (const ch of children) walk(ch, level + 1);
+                    };
+                    for (const root of tree.roots) walk(root, 0);
+                    return nodes;
+                  })()
                 )}
               </div>
             </div>
