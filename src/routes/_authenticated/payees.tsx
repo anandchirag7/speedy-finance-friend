@@ -656,7 +656,7 @@ function PayeeCard({
                 Manual
               </Badge>
             )}
-            {(payee.tags ?? []).slice(0, 2).map((t) => (
+            {(payee.tags ?? []).slice(0, 2).map((t: string) => (
               <Badge key={t} variant="secondary" className="h-5 rounded-md bg-slate-100 px-1.5 text-[10px] font-normal text-slate-600 hover:bg-slate-100">
                 {t}
               </Badge>
@@ -977,12 +977,12 @@ function DetailsPanel({
             </Field>
             <Field label="Tags" className="sm:col-span-2">
               <div className="flex flex-wrap items-center gap-1.5 rounded-md border bg-white p-2">
-                {(payee.tags ?? []).map((t) => (
+                {(payee.tags ?? []).map((t: string) => (
                   <Badge key={t} variant="secondary" className="gap-1 rounded-md bg-slate-100 font-normal">
                     {t}
                     <button
                       className="ml-0.5 opacity-60 hover:opacity-100"
-                      onClick={() => onPatch({ tags: (payee.tags ?? []).filter((x) => x !== t) })}
+                      onClick={() => onPatch({ tags: (payee.tags ?? []).filter((x: string) => x !== t) })}
                       aria-label={`Remove ${t}`}
                     >
                       <X className="h-3 w-3" />
