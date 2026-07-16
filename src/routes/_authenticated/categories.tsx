@@ -943,6 +943,7 @@ function EditDialog({
   const [parentQuery, setParentQuery] = useState("");
   const [parentOpen, setParentOpen] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [modeOverride, setModeOverride] = useState<"income" | "expense" | "subcategory" | null>(null);
 
   useEffect(() => {
     if (value) {
@@ -950,6 +951,7 @@ function EditDialog({
       setTab("details");
       setTouched(false);
       setParentQuery("");
+      setModeOverride(value.parent_id ? "subcategory" : null);
     }
   }, [value]);
 
@@ -959,12 +961,12 @@ function EditDialog({
   };
 
   const mode: "income" | "expense" | "subcategory" =
-    form.parent_id ? "subcategory" : form.kind === "income" ? "income" : "expense";
+    modeOverride ?? (form.parent_id ? "subcategory" : form.kind === "income" ? "income" : "expense");
 
   const setMode = (m: "income" | "expense" | "subcategory") => {
+    setModeOverride(m);
     if (m === "subcategory") {
-      // keep kind, allow parent selection
-      update({});
+      setTouched(true);
     } else {
       update({ kind: m, parent_id: null });
     }
