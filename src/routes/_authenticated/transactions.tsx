@@ -124,7 +124,7 @@ function TransactionsWorkspace() {
   const { data: savedViews = [] } = useQuery({ queryKey: ["txn-views"], queryFn: () => viewsFn() });
 
   // ---- filters
-  const [range, setRange] = useState<RangePreset>("30d");
+  const [range, setRange] = useState<RangePreset>("ytd");
   const [customStart, setCustomStart] = useState<string>("");
   const [customEnd, setCustomEnd] = useState<string>("");
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
