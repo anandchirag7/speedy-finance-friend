@@ -16,6 +16,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedTransactionsRouteImport } from './routes/_authenticated/transactions'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedPayeesRouteImport } from './routes/_authenticated/payees'
 import { Route as AuthenticatedInvestmentsRouteImport } from './routes/_authenticated/investments'
 import { Route as AuthenticatedGoalsRouteImport } from './routes/_authenticated/goals'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
@@ -60,6 +61,11 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPayeesRoute = AuthenticatedPayeesRouteImport.update({
+  id: '/payees',
+  path: '/payees',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedInvestmentsRoute =
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof AuthenticatedChatRouteWithChildren
   '/goals': typeof AuthenticatedGoalsRoute
   '/investments': typeof AuthenticatedInvestmentsRoute
+  '/payees': typeof AuthenticatedPayeesRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/transactions': typeof AuthenticatedTransactionsRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/categories': typeof AuthenticatedCategoriesRoute
   '/goals': typeof AuthenticatedGoalsRoute
   '/investments': typeof AuthenticatedInvestmentsRoute
+  '/payees': typeof AuthenticatedPayeesRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/transactions': typeof AuthenticatedTransactionsRoute
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/_authenticated/chat': typeof AuthenticatedChatRouteWithChildren
   '/_authenticated/goals': typeof AuthenticatedGoalsRoute
   '/_authenticated/investments': typeof AuthenticatedInvestmentsRoute
+  '/_authenticated/payees': typeof AuthenticatedPayeesRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/transactions': typeof AuthenticatedTransactionsRoute
@@ -183,6 +192,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/goals'
     | '/investments'
+    | '/payees'
     | '/reports'
     | '/settings'
     | '/transactions'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/categories'
     | '/goals'
     | '/investments'
+    | '/payees'
     | '/reports'
     | '/settings'
     | '/transactions'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/_authenticated/chat'
     | '/_authenticated/goals'
     | '/_authenticated/investments'
+    | '/_authenticated/payees'
     | '/_authenticated/reports'
     | '/_authenticated/settings'
     | '/_authenticated/transactions'
@@ -283,6 +295,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/payees': {
+      id: '/_authenticated/payees'
+      path: '/payees'
+      fullPath: '/payees'
+      preLoaderRoute: typeof AuthenticatedPayeesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/investments': {
@@ -379,6 +398,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChatRoute: typeof AuthenticatedChatRouteWithChildren
   AuthenticatedGoalsRoute: typeof AuthenticatedGoalsRoute
   AuthenticatedInvestmentsRoute: typeof AuthenticatedInvestmentsRoute
+  AuthenticatedPayeesRoute: typeof AuthenticatedPayeesRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTransactionsRoute: typeof AuthenticatedTransactionsRoute
@@ -394,6 +414,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChatRoute: AuthenticatedChatRouteWithChildren,
   AuthenticatedGoalsRoute: AuthenticatedGoalsRoute,
   AuthenticatedInvestmentsRoute: AuthenticatedInvestmentsRoute,
+  AuthenticatedPayeesRoute: AuthenticatedPayeesRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTransactionsRoute: AuthenticatedTransactionsRoute,
