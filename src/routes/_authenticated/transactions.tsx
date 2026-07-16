@@ -735,7 +735,7 @@ function TransactionsWorkspace() {
           onClick={() => setAddOpen(true)}
         ><Plus className="h-6 w-6" /></Button>
 
-        <FastEntryDialog open={addOpen} onOpenChange={setAddOpen} />
+        <FastEntryDialog open={addOpen} onOpenChange={setAddOpen} hideTrigger />
       </div>
     </div>
   );
