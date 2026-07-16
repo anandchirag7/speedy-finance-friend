@@ -930,7 +930,7 @@ function EditDialog({
   const isOpen = !!value;
 
   // reset when opening
-  useMemo(() => {
+  useEffect(() => {
     if (value) setForm({ ...value });
   }, [value]);
 
