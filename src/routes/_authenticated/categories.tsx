@@ -76,6 +76,15 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/categories")({
@@ -926,167 +935,553 @@ function EditDialog({
   saving: boolean;
   allCategories: Cat[];
 }) {
-  const [form, setForm] = useState<Partial<Cat>>({});
   const isOpen = !!value;
+  const initial = useMemo<Partial<Cat>>(() => value ?? {}, [value]);
+  const [form, setForm] = useState<Partial<Cat>>({});
+  const [tab, setTab] = useState<"details" | "tax">("details");
+  const [touched, setTouched] = useState(false);
+  const [parentQuery, setParentQuery] = useState("");
+  const [parentOpen, setParentOpen] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
-  // reset when opening
   useEffect(() => {
-    if (value) setForm({ ...value });
+    if (value) {
+      setForm({ ...value });
+      setTab("details");
+      setTouched(false);
+      setParentQuery("");
+    }
   }, [value]);
 
-  const parentOptions = allCategories.filter(
-    (c) => c.id !== form.id && !c.parent_id && c.kind === form.kind,
-  );
+  const update = (patch: Partial<Cat>) => {
+    setTouched(true);
+    setForm((f) => ({ ...f, ...patch }));
+  };
+
+  const mode: "income" | "expense" | "subcategory" =
+    form.parent_id ? "subcategory" : form.kind === "income" ? "income" : "expense";
+
+  const setMode = (m: "income" | "expense" | "subcategory") => {
+    if (m === "subcategory") {
+      // keep kind, allow parent selection
+      update({});
+    } else {
+      update({ kind: m, parent_id: null });
+    }
+  };
+
+  const name = (form.name ?? "").trim();
+  const nameError =
+    touched && name.length === 0
+      ? "Category name is required"
+      : allCategories.some(
+            (c) =>
+              c.id !== form.id &&
+              c.name.trim().toLowerCase() === name.toLowerCase() &&
+              c.kind === (form.kind ?? "expense"),
+          )
+        ? "A category with this name already exists"
+        : null;
+
+  // Parent options for subcategory mode
+  const parentGroups = useMemo(() => {
+    const q = parentQuery.trim().toLowerCase();
+    const eligible = allCategories.filter(
+      (c) => c.id !== form.id && !c.parent_id && (!q || c.name.toLowerCase().includes(q)),
+    );
+    const groups: Record<string, Cat[]> = {};
+    for (const c of eligible) {
+      (groups[c.kind] ||= []).push(c);
+    }
+    return groups;
+  }, [allCategories, parentQuery, form.id]);
+
+  const selectedParent = allCategories.find((c) => c.id === form.parent_id);
+  const description = form.description ?? "";
+  const canSave = !saving && name.length > 0 && !nameError;
+
+  const attemptClose = () => {
+    if (touched && !saving) setConfirmDiscard(true);
+    else onClose();
+  };
+
+  const submit = () => {
+    setTouched(true);
+    if (!name) return;
+    if (nameError) return;
+    onSave({
+      id: form.id,
+      name,
+      kind: (form.kind ?? "expense") as any,
+      scope: (form.scope ?? "personal") as any,
+      parent_id: form.parent_id ?? null,
+      icon: form.icon ?? null,
+      color: form.color ?? null,
+      description: form.description ?? null,
+      group_label: form.group_label ?? null,
+      tax_code: form.tax_code ?? null,
+      is_hidden: !!form.is_hidden,
+      sort_order: form.sort_order ?? 0,
+    });
+  };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{form.id ? "Edit category" : "New category"}</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-2">
-            <Label>Name</Label>
-            <Input
-              value={form.name ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="e.g., Groceries"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Type</Label>
-              <Select
-                value={form.kind ?? "expense"}
-                onValueChange={(v: any) => setForm((f) => ({ ...f, kind: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="income">Income</SelectItem>
-                  <SelectItem value="expense">Expense</SelectItem>
-                  <SelectItem value="transfer">Transfer</SelectItem>
-                  <SelectItem value="investment">Investment</SelectItem>
-                </SelectContent>
-              </Select>
+    <>
+      <Dialog open={isOpen} onOpenChange={(o) => !o && attemptClose()}>
+        <DialogContent
+          className="max-w-xl gap-0 overflow-hidden rounded-none border-0 bg-card p-0 shadow-xl sm:rounded-2xl sm:border data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 flex h-[100dvh] w-screen max-h-none flex-col sm:h-auto sm:w-full sm:max-h-[92vh]"
+          onEscapeKeyDown={(e) => {
+            e.preventDefault();
+            attemptClose();
+          }}
+          onInteractOutside={(e) => {
+            if (touched) e.preventDefault();
+          }}
+        >
+          {/* Header */}
+          <div className="border-b bg-card px-5 pb-4 pt-5 sm:px-6">
+            <DialogHeader className="space-y-1 text-left">
+              <DialogTitle className="font-display text-xl font-semibold tracking-tight">
+                {form.id ? "Edit Category" : "Create Category"}
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                Categories help organize your financial transactions for budgets, reports, and taxes.
+              </p>
+            </DialogHeader>
+
+            {/* Segmented tabs */}
+            <div className="mt-4 inline-flex rounded-lg border bg-muted/60 p-0.5">
+              {[
+                { k: "details", label: "Details" },
+                { k: "tax", label: "Tax Reporting" },
+              ].map((t) => (
+                <button
+                  key={t.k}
+                  type="button"
+                  onClick={() => setTab(t.k as any)}
+                  className={cn(
+                    "rounded-md px-3.5 py-1.5 text-sm font-medium transition-all",
+                    tab === t.k
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
-            <div className="grid gap-2">
-              <Label>Scope</Label>
-              <Select
-                value={form.scope ?? "personal"}
-                onValueChange={(v: any) => setForm((f) => ({ ...f, scope: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="personal">
-                    <span className="inline-flex items-center gap-2">
-                      <User className="h-3.5 w-3.5" /> Personal
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto bg-[oklch(0.985_0.005_240)] px-5 py-5 dark:bg-background sm:px-6">
+            {tab === "details" ? (
+              <div className="space-y-5 animate-in fade-in-50 duration-200">
+                {/* Name */}
+                <div className="grid gap-1.5">
+                  <Label htmlFor="cat-name" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Category Name <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="cat-name"
+                    autoFocus
+                    value={form.name ?? ""}
+                    onChange={(e) => update({ name: e.target.value })}
+                    onBlur={() => setTouched(true)}
+                    placeholder="e.g. Groceries"
+                    className={cn(
+                      "h-10 bg-card",
+                      nameError && "border-destructive focus-visible:ring-destructive/30",
+                    )}
+                    aria-invalid={!!nameError}
+                    aria-describedby={nameError ? "cat-name-error" : undefined}
+                  />
+                  {nameError && (
+                    <p id="cat-name-error" className="text-xs text-destructive animate-in fade-in-50">
+                      {nameError}
+                    </p>
+                  )}
+                </div>
+
+                {/* Type cards */}
+                <div className="grid gap-2">
+                  <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Category Type
+                  </Label>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <TypeCard
+                      title="Income"
+                      description="Money coming in"
+                      icon={TrendingUp}
+                      accent="text-emerald-600"
+                      selected={mode === "income"}
+                      onClick={() => setMode("income")}
+                    />
+                    <TypeCard
+                      title="Expense"
+                      description="Money going out"
+                      icon={TrendingDown}
+                      accent="text-rose-600"
+                      selected={mode === "expense"}
+                      onClick={() => setMode("expense")}
+                    />
+                    <TypeCard
+                      title="Subcategory"
+                      description="Nested under another"
+                      icon={FolderTree}
+                      accent="text-indigo-600"
+                      selected={mode === "subcategory"}
+                      onClick={() => setMode("subcategory")}
+                    />
+                  </div>
+                </div>
+
+                {/* Parent picker (animated) */}
+                {mode === "subcategory" && (
+                  <div className="grid gap-1.5 animate-in fade-in-50 slide-in-from-top-1 duration-200">
+                    <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Parent Category
+                    </Label>
+                    <Popover open={parentOpen} onOpenChange={setParentOpen}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex h-10 items-center justify-between rounded-md border bg-card px-3 text-left text-sm shadow-sm hover:bg-muted/30"
+                          aria-haspopup="listbox"
+                          aria-expanded={parentOpen}
+                        >
+                          {selectedParent ? (
+                            <span className="flex items-center gap-2">
+                              <span
+                                className={cn(
+                                  "inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium capitalize",
+                                  KIND_STYLES[selectedParent.kind],
+                                )}
+                              >
+                                {selectedParent.kind}
+                              </span>
+                              <span className="font-medium">{selectedParent.name}</span>
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Search and select a parent…</span>
+                          )}
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <Command>
+                          <CommandInput
+                            placeholder="Search parents…"
+                            value={parentQuery}
+                            onValueChange={setParentQuery}
+                          />
+                          <CommandList className="max-h-64">
+                            <CommandEmpty>No categories found.</CommandEmpty>
+                            {Object.entries(parentGroups).map(([kind, list]) => (
+                              <CommandGroup key={kind} heading={kind.charAt(0).toUpperCase() + kind.slice(1)}>
+                                {list.map((p) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={`${p.kind}:${p.name}`}
+                                    onSelect={() => {
+                                      update({ parent_id: p.id, kind: p.kind });
+                                      setParentOpen(false);
+                                    }}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "mr-2 inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium capitalize",
+                                        KIND_STYLES[p.kind],
+                                      )}
+                                    >
+                                      {p.kind}
+                                    </span>
+                                    {p.name}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            ))}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
+
+                {/* Scope + Group */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Scope
+                    </Label>
+                    <Select
+                      value={form.scope ?? "personal"}
+                      onValueChange={(v: any) => update({ scope: v })}
+                    >
+                      <SelectTrigger className="h-10 bg-card">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="personal">
+                          <span className="inline-flex items-center gap-2">
+                            <User className="h-3.5 w-3.5" /> Personal
+                          </span>
+                        </SelectItem>
+                        <SelectItem value="business">
+                          <span className="inline-flex items-center gap-2">
+                            <Briefcase className="h-3.5 w-3.5" /> Business
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Group
+                    </Label>
+                    <Input
+                      value={form.group_label ?? ""}
+                      onChange={(e) => update({ group_label: e.target.value })}
+                      placeholder="e.g. Household"
+                      className="h-10 bg-card"
+                    />
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="grid gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Description <span className="normal-case text-muted-foreground/70">(optional)</span>
+                    </Label>
+                    <span
+                      className={cn(
+                        "text-[11px] tabular-nums text-muted-foreground",
+                        description.length > 450 && "text-warning-foreground",
+                        description.length >= 500 && "text-destructive",
+                      )}
+                    >
+                      {description.length}/500
                     </span>
-                  </SelectItem>
-                  <SelectItem value="business">
-                    <span className="inline-flex items-center gap-2">
-                      <Briefcase className="h-3.5 w-3.5" /> Business
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    maxLength={500}
+                    value={description}
+                    onChange={(e) => update({ description: e.target.value })}
+                    placeholder="Add a short note about what belongs in this category…"
+                    className="resize-none bg-card"
+                  />
+                </div>
+
+                <label className="flex items-center justify-between rounded-lg border bg-card p-3">
+                  <div>
+                    <div className="text-sm font-medium">Hidden</div>
+                    <div className="text-xs text-muted-foreground">
+                      Keep out of pickers, budgets, and reports.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={!!form.is_hidden}
+                    onCheckedChange={(v) => update({ is_hidden: v })}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-5 animate-in fade-in-50 duration-200">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Tax Category
+                  </Label>
+                  <Select
+                    value={form.tax_code?.split("|")[0] || "__none"}
+                    onValueChange={(v) => {
+                      const line = form.tax_code?.split("|")[1] ?? "";
+                      update({ tax_code: v === "__none" ? null : line ? `${v}|${line}` : v });
+                    }}
+                  >
+                    <SelectTrigger className="h-10 bg-card">
+                      <SelectValue placeholder="Select a tax category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">— Not taxable —</SelectItem>
+                      <SelectItem value="80C">80C — Investments</SelectItem>
+                      <SelectItem value="80D">80D — Medical Insurance</SelectItem>
+                      <SelectItem value="80G">80G — Donations</SelectItem>
+                      <SelectItem value="HRA">HRA — House Rent Allowance</SelectItem>
+                      <SelectItem value="LTA">LTA — Leave Travel</SelectItem>
+                      <SelectItem value="BUS-INC">Business Income</SelectItem>
+                      <SelectItem value="BUS-EXP">Business Expense</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-1.5">
+                  <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Tax Line Mapping
+                  </Label>
+                  <Input
+                    value={form.tax_code?.split("|")[1] ?? ""}
+                    onChange={(e) => {
+                      const cat = form.tax_code?.split("|")[0] ?? "";
+                      const line = e.target.value;
+                      update({ tax_code: cat ? `${cat}|${line}` : line ? `|${line}` : null });
+                    }}
+                    placeholder="e.g. Schedule VI — Line 3(a)"
+                    className="h-10 bg-card"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Optional. Maps this category to a specific tax form line for exports.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border bg-card p-4">
+                  <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <Receipt className="h-3.5 w-3.5" /> Reporting Preview
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <PreviewRow label="Category" value={name || "Untitled"} />
+                    <PreviewRow
+                      label="Type"
+                      value={
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium capitalize",
+                            KIND_STYLES[(form.kind ?? "expense") as Cat["kind"]],
+                          )}
+                        >
+                          {form.kind ?? "expense"}
+                        </span>
+                      }
+                    />
+                    <PreviewRow
+                      label="Tax Category"
+                      value={
+                        form.tax_code?.split("|")[0] || (
+                          <span className="text-muted-foreground">Not taxable</span>
+                        )
+                      }
+                    />
+                    <PreviewRow
+                      label="Tax Line"
+                      value={
+                        form.tax_code?.split("|")[1] || (
+                          <span className="text-muted-foreground">—</span>
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky footer */}
+          <div className="sticky bottom-0 flex items-center justify-between gap-2 border-t bg-card px-5 py-3 sm:px-6">
+            <p className="hidden text-xs text-muted-foreground sm:block">
+              {touched ? "Unsaved changes" : "\u00A0"}
+            </p>
+            <div className="flex flex-1 gap-2 sm:flex-none sm:justify-end">
+              <Button variant="outline" onClick={attemptClose} className="flex-1 sm:flex-none">
+                Cancel
+              </Button>
+              <Button
+                disabled={!canSave}
+                onClick={submit}
+                className="flex-1 sm:flex-none"
+              >
+                {saving ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" />
+                    Saving…
+                  </span>
+                ) : form.id ? (
+                  "Save Changes"
+                ) : (
+                  "Create Category"
+                )}
+              </Button>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label>Group</Label>
-              <Input
-                value={form.group_label ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, group_label: e.target.value }))
-                }
-                placeholder="e.g., Household"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-1">
-                Tax code
-                <Info className="h-3 w-3 text-muted-foreground" />
-              </Label>
-              <Input
-                value={form.tax_code ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, tax_code: e.target.value }))
-                }
-                placeholder="e.g., 80C"
-              />
-            </div>
-          </div>
-          <div className="grid gap-2">
-            <Label>Parent (optional)</Label>
-            <Select
-              value={form.parent_id ?? "__none"}
-              onValueChange={(v) =>
-                setForm((f) => ({ ...f, parent_id: v === "__none" ? null : v }))
-              }
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your edits to this category will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmDiscard(false);
+                onClose();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">— None —</SelectItem>
-                {parentOptions.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label>Description</Label>
-            <Textarea
-              rows={3}
-              value={form.description ?? ""}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, description: e.target.value }))
-              }
-              placeholder="What belongs in this category?"
-            />
-          </div>
-          <label className="flex items-center justify-between rounded-md border p-3">
-            <span className="text-sm">Hide from pickers &amp; reports</span>
-            <Switch
-              checked={!!form.is_hidden}
-              onCheckedChange={(v) => setForm((f) => ({ ...f, is_hidden: v }))}
-            />
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            disabled={saving || !form.name?.trim()}
-            onClick={() =>
-              onSave({
-                id: form.id,
-                name: form.name!,
-                kind: (form.kind ?? "expense") as any,
-                scope: (form.scope ?? "personal") as any,
-                parent_id: form.parent_id ?? null,
-                icon: form.icon ?? null,
-                color: form.color ?? null,
-                description: form.description ?? null,
-                group_label: form.group_label ?? null,
-                tax_code: form.tax_code ?? null,
-                is_hidden: !!form.is_hidden,
-                sort_order: form.sort_order ?? 0,
-              })
-            }
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
+
+function TypeCard({
+  title,
+  description,
+  icon: Icon,
+  accent,
+  selected,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  icon: any;
+  accent: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        "group relative flex flex-col items-start gap-1 rounded-xl border bg-card p-3 text-left transition-all",
+        "hover:border-primary/40 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected
+          ? "border-primary/60 bg-primary/5 ring-1 ring-primary/30 shadow-sm"
+          : "border-border",
+      )}
+    >
+      <div
+        className={cn(
+          "grid h-8 w-8 place-items-center rounded-lg bg-muted",
+          selected && "bg-primary/10",
+        )}
+      >
+        <Icon className={cn("h-4 w-4", accent)} />
+      </div>
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="text-[11px] leading-snug text-muted-foreground">{description}</div>
+      {selected && (
+        <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
+      )}
+    </button>
+  );
+}
+
+function PreviewRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium">{value}</span>
+    </div>
+  );
+}
+
