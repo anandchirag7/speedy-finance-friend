@@ -632,6 +632,215 @@ export type Database = {
           },
         ]
       }
+      memorized_payees: {
+        Row: {
+          account_id: string | null
+          address: string | null
+          ai_suggestions: boolean
+          amount_tolerance_pct: number | null
+          apply_to_downloaded: boolean
+          apply_to_import: boolean
+          apply_to_manual: boolean
+          auto_amount: boolean
+          auto_attach_receipt: boolean
+          auto_budget: boolean
+          auto_business: boolean
+          auto_categorize: boolean
+          auto_clear: boolean
+          auto_memo: boolean
+          auto_reviewed: boolean
+          auto_tags: boolean
+          auto_tax: boolean
+          budget_link: string | null
+          category_id: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          date_range_end: string | null
+          date_range_start: string | null
+          default_amount: number | null
+          exact_match_only: boolean
+          fuzzy_match: boolean
+          household_id: string
+          id: string
+          is_disabled: boolean
+          is_favorite: boolean
+          is_recurring: boolean
+          last_used_at: string | null
+          locked: boolean
+          max_amount: number | null
+          memo: string | null
+          merchant: string
+          merchant_type: string | null
+          min_amount: number | null
+          modified_by: string | null
+          never_auto: boolean
+          next_expected_date: string | null
+          notes: string | null
+          payment_method: string | null
+          priority: number
+          recurrence_day: number | null
+          recurrence_freq: string | null
+          reminder_days: number | null
+          restrict_account_ids: string[]
+          show_in_calendar: boolean
+          splits: Json
+          tags: string[]
+          transfer_account_id: string | null
+          txn_type: string
+          updated_at: string
+          usage_count: number
+          website: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          address?: string | null
+          ai_suggestions?: boolean
+          amount_tolerance_pct?: number | null
+          apply_to_downloaded?: boolean
+          apply_to_import?: boolean
+          apply_to_manual?: boolean
+          auto_amount?: boolean
+          auto_attach_receipt?: boolean
+          auto_budget?: boolean
+          auto_business?: boolean
+          auto_categorize?: boolean
+          auto_clear?: boolean
+          auto_memo?: boolean
+          auto_reviewed?: boolean
+          auto_tags?: boolean
+          auto_tax?: boolean
+          budget_link?: string | null
+          category_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          date_range_end?: string | null
+          date_range_start?: string | null
+          default_amount?: number | null
+          exact_match_only?: boolean
+          fuzzy_match?: boolean
+          household_id: string
+          id?: string
+          is_disabled?: boolean
+          is_favorite?: boolean
+          is_recurring?: boolean
+          last_used_at?: string | null
+          locked?: boolean
+          max_amount?: number | null
+          memo?: string | null
+          merchant: string
+          merchant_type?: string | null
+          min_amount?: number | null
+          modified_by?: string | null
+          never_auto?: boolean
+          next_expected_date?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          priority?: number
+          recurrence_day?: number | null
+          recurrence_freq?: string | null
+          reminder_days?: number | null
+          restrict_account_ids?: string[]
+          show_in_calendar?: boolean
+          splits?: Json
+          tags?: string[]
+          transfer_account_id?: string | null
+          txn_type?: string
+          updated_at?: string
+          usage_count?: number
+          website?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          address?: string | null
+          ai_suggestions?: boolean
+          amount_tolerance_pct?: number | null
+          apply_to_downloaded?: boolean
+          apply_to_import?: boolean
+          apply_to_manual?: boolean
+          auto_amount?: boolean
+          auto_attach_receipt?: boolean
+          auto_budget?: boolean
+          auto_business?: boolean
+          auto_categorize?: boolean
+          auto_clear?: boolean
+          auto_memo?: boolean
+          auto_reviewed?: boolean
+          auto_tags?: boolean
+          auto_tax?: boolean
+          budget_link?: string | null
+          category_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          date_range_end?: string | null
+          date_range_start?: string | null
+          default_amount?: number | null
+          exact_match_only?: boolean
+          fuzzy_match?: boolean
+          household_id?: string
+          id?: string
+          is_disabled?: boolean
+          is_favorite?: boolean
+          is_recurring?: boolean
+          last_used_at?: string | null
+          locked?: boolean
+          max_amount?: number | null
+          memo?: string | null
+          merchant?: string
+          merchant_type?: string | null
+          min_amount?: number | null
+          modified_by?: string | null
+          never_auto?: boolean
+          next_expected_date?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          priority?: number
+          recurrence_day?: number | null
+          recurrence_freq?: string | null
+          reminder_days?: number | null
+          restrict_account_ids?: string[]
+          show_in_calendar?: boolean
+          splits?: Json
+          tags?: string[]
+          transfer_account_id?: string | null
+          txn_type?: string
+          updated_at?: string
+          usage_count?: number
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memorized_payees_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memorized_payees_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memorized_payees_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memorized_payees_transfer_account_id_fkey"
+            columns: ["transfer_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       net_worth_snapshots: {
         Row: {
           breakdown: Json
