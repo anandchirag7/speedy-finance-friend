@@ -1029,7 +1029,6 @@ function EditDialog({
     <>
       <Dialog open={isOpen} onOpenChange={(o) => !o && attemptClose()}>
         <DialogContent
-          showCloseButton={false}
           className="max-w-xl gap-0 overflow-hidden rounded-none border-0 bg-card p-0 shadow-xl sm:rounded-2xl sm:border data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 flex h-[100dvh] w-screen max-h-none flex-col sm:h-auto sm:w-full sm:max-h-[92vh]"
           onEscapeKeyDown={(e) => {
             e.preventDefault();
