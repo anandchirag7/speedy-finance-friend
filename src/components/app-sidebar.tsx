@@ -11,6 +11,7 @@ import {
   Settings,
   MessageSquare,
   FolderTree,
+  Sparkles,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ const primary = [
 const planning = [
   { title: "Budgets", url: "/budgets", icon: PiggyBank },
   { title: "Categories", url: "/categories", icon: FolderTree },
+  { title: "Payees", url: "/payees", icon: Sparkles },
   { title: "Bills", url: "/bills", icon: Bell },
   { title: "Goals", url: "/goals", icon: Target },
 ];
