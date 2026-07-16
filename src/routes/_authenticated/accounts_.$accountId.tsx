@@ -46,7 +46,7 @@ import {
 import { AccountFormDialog } from "@/components/account-form-dialog";
 import { FastEntryDialog } from "@/components/fast-entry-dialog";
 
-export const Route = createFileRoute("/_authenticated/accounts/$accountId")({
+export const Route = createFileRoute("/_authenticated/accounts_/$accountId")({
   head: ({ params }) => ({
     meta: [{ title: `Account · Register — Paisa` }, { name: "description", content: `Register, insights, and reconciliation for account ${params.accountId}` }],
   }),
