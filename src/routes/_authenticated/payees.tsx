@@ -70,6 +70,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   listMemorizedPayees,
@@ -142,6 +150,7 @@ function PayeesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sort, setSort] = useState<string>("alpha");
   const [confirmDel, setConfirmDel] = useState<string[] | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["memorized-payees"] });
@@ -230,18 +239,7 @@ function PayeesPage() {
     });
   };
 
-  const handleCreate = () => {
-    createMut.mutate({
-      merchant: "New payee",
-      txn_type: "expense",
-      tags: [],
-      splits: [],
-      currency: "INR",
-      restrict_account_ids: [],
-      auto_categorize: true,
-      priority: 0,
-    });
-  };
+  const handleCreate = () => setCreateOpen(true);
 
   const handleExport = () => {
     const rows = payees.data ?? [];
@@ -509,6 +507,19 @@ function PayeesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PayeeFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        cats={cats.data ?? []}
+        accts={accts.data ?? []}
+        saving={createMut.isPending}
+        onSubmit={(data) => {
+          createMut.mutate(data, {
+            onSuccess: () => setCreateOpen(false),
+          });
+        }}
+      />
     </div>
   );
 }
@@ -1170,5 +1181,353 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-0.5 text-sm font-semibold text-slate-900">{value}</div>
     </div>
+  );
+}
+
+/* ---------- Create dialog ---------- */
+
+const DEFAULT_DRAFT: any = {
+  merchant: "",
+  merchant_type: "",
+  website: "",
+  address: "",
+  notes: "",
+  txn_type: "expense",
+  category_id: null,
+  tags: [],
+  memo: "",
+  default_amount: null,
+  amount_tolerance_pct: null,
+  currency: "INR",
+  payment_method: "",
+  account_id: null,
+  splits: [],
+  auto_categorize: true,
+  auto_memo: false,
+  auto_tags: false,
+  auto_amount: false,
+  auto_clear: false,
+  auto_attach_receipt: false,
+  auto_budget: false,
+  auto_reviewed: false,
+  auto_tax: false,
+  auto_business: false,
+  priority: 0,
+  locked: false,
+  never_auto: false,
+  ai_suggestions: true,
+  fuzzy_match: true,
+  exact_match_only: false,
+  min_amount: null,
+  max_amount: null,
+  restrict_account_ids: [],
+  apply_to_downloaded: true,
+  apply_to_manual: true,
+  apply_to_import: true,
+  is_recurring: false,
+  recurrence_freq: null,
+  next_expected_date: null,
+  reminder_days: null,
+  show_in_calendar: false,
+  is_favorite: false,
+  is_disabled: false,
+};
+
+function PayeeFormDialog({
+  open,
+  onOpenChange,
+  cats,
+  accts,
+  saving,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  cats: any[];
+  accts: any[];
+  saving: boolean;
+  onSubmit: (data: any) => void;
+}) {
+  const [d, setD] = useState<any>(DEFAULT_DRAFT);
+  const [tagInput, setTagInput] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setD({ ...DEFAULT_DRAFT });
+      setTagInput("");
+    }
+  }, [open]);
+
+  const set = (patch: any) => setD((prev: any) => ({ ...prev, ...patch }));
+
+  const addTag = () => {
+    const v = tagInput.trim();
+    if (!v) return;
+    if ((d.tags ?? []).includes(v)) return;
+    set({ tags: [...(d.tags ?? []), v] });
+    setTagInput("");
+  };
+
+  const submit = () => {
+    if (!d.merchant?.trim()) {
+      toast.error("Payee name is required");
+      return;
+    }
+    onSubmit({ ...d, merchant: d.merchant.trim() });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>New memorized payee</DialogTitle>
+          <DialogDescription>
+            Set defaults, automation, and matching rules. All fields save together when you click Save.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Section title="General information" defaultOpen>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Payee name" className="sm:col-span-2">
+                <Input
+                  autoFocus
+                  value={d.merchant ?? ""}
+                  onChange={(e) => set({ merchant: e.target.value })}
+                  placeholder="e.g., Netflix, Amazon, Landlord"
+                />
+              </Field>
+              <Field label="Merchant type">
+                <Input
+                  value={d.merchant_type ?? ""}
+                  onChange={(e) => set({ merchant_type: e.target.value })}
+                  placeholder="e.g., Streaming, Restaurant"
+                />
+              </Field>
+              <Field label="Website">
+                <Input
+                  value={d.website ?? ""}
+                  onChange={(e) => set({ website: e.target.value })}
+                  placeholder="https://"
+                />
+              </Field>
+              <Field label="Address" className="sm:col-span-2">
+                <Input value={d.address ?? ""} onChange={(e) => set({ address: e.target.value })} />
+              </Field>
+              <Field label="Notes" className="sm:col-span-2">
+                <Textarea value={d.notes ?? ""} onChange={(e) => set({ notes: e.target.value })} rows={2} />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="Default transaction" defaultOpen>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Type">
+                <Select value={d.txn_type} onValueChange={(v) => set({ txn_type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TXN_TYPES.map((t) => {
+                      const I = t.icon;
+                      return (
+                        <SelectItem key={t.value} value={t.value}>
+                          <div className="flex items-center gap-2">
+                            <I className={cn("h-4 w-4", t.tone)} /> {t.label}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Category">
+                <Select
+                  value={d.category_id ?? "none"}
+                  onValueChange={(v) => set({ category_id: v === "none" ? null : v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="none">— None —</SelectItem>
+                    {cats.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Default amount">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={d.default_amount ?? ""}
+                  onChange={(e) => set({ default_amount: e.target.value ? Number(e.target.value) : null })}
+                  placeholder="0.00"
+                />
+              </Field>
+              <Field label="Tolerance %">
+                <Input
+                  type="number"
+                  value={d.amount_tolerance_pct ?? ""}
+                  onChange={(e) => set({ amount_tolerance_pct: e.target.value ? Number(e.target.value) : null })}
+                  placeholder="e.g., 10"
+                />
+              </Field>
+              <Field label="Payment method">
+                <Input
+                  value={d.payment_method ?? ""}
+                  onChange={(e) => set({ payment_method: e.target.value })}
+                  placeholder="UPI, Card, Cash…"
+                />
+              </Field>
+              <Field label="Default account">
+                <Select
+                  value={d.account_id ?? "none"}
+                  onValueChange={(v) => set({ account_id: v === "none" ? null : v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Any —</SelectItem>
+                    {accts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Memo" className="sm:col-span-2">
+                <Textarea value={d.memo ?? ""} onChange={(e) => set({ memo: e.target.value })} rows={2} maxLength={500} />
+              </Field>
+              <Field label="Tags" className="sm:col-span-2">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-md border bg-white p-2">
+                  {(d.tags ?? []).map((t: string) => (
+                    <Badge key={t} variant="secondary" className="gap-1 rounded-md bg-slate-100 font-normal">
+                      {t}
+                      <button
+                        className="ml-0.5 opacity-60 hover:opacity-100"
+                        onClick={() => set({ tags: (d.tags ?? []).filter((x: string) => x !== t) })}
+                        aria-label={`Remove ${t}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                  <input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTag();
+                      }
+                    }}
+                    onBlur={addTag}
+                    placeholder="Add tag…"
+                    className="min-w-[100px] flex-1 bg-transparent text-xs outline-none"
+                  />
+                </div>
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="Automation rules">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {[
+                ["auto_categorize", "Automatically categorize"],
+                ["auto_memo", "Automatically populate memo"],
+                ["auto_tags", "Automatically populate tags"],
+                ["auto_amount", "Automatically set amount"],
+                ["auto_clear", "Automatically clear transaction"],
+                ["auto_attach_receipt", "Automatically attach receipt"],
+                ["auto_budget", "Automatically assign budget"],
+                ["auto_reviewed", "Automatically mark reviewed"],
+                ["auto_tax", "Apply tax category"],
+                ["auto_business", "Apply business tag"],
+              ].map(([key, label]) => (
+                <ToggleRow
+                  key={key}
+                  label={label}
+                  checked={!!d[key]}
+                  onChange={(v) => set({ [key]: v })}
+                />
+              ))}
+            </div>
+          </Section>
+
+          <Section title="Recurring settings">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ToggleRow label="This is a recurring payment" checked={!!d.is_recurring} onChange={(v) => set({ is_recurring: v })} />
+              <ToggleRow label="Show in calendar" checked={!!d.show_in_calendar} onChange={(v) => set({ show_in_calendar: v })} />
+              {d.is_recurring && (
+                <>
+                  <Field label="Frequency">
+                    <Select value={d.recurrence_freq ?? "monthly"} onValueChange={(v) => set({ recurrence_freq: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FREQUENCIES.map((f) => (
+                          <SelectItem key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Next expected date">
+                    <Input
+                      type="date"
+                      value={d.next_expected_date ?? ""}
+                      onChange={(e) => set({ next_expected_date: e.target.value || null })}
+                    />
+                  </Field>
+                  <Field label="Reminder days before">
+                    <Input
+                      type="number"
+                      value={d.reminder_days ?? ""}
+                      onChange={(e) => set({ reminder_days: e.target.value ? Number(e.target.value) : null })}
+                      placeholder="e.g., 3"
+                    />
+                  </Field>
+                </>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Advanced preferences">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <ToggleRow label="Lock from automatic updates" checked={!!d.locked} onChange={(v) => set({ locked: v })} />
+              <ToggleRow label="Never auto-categorize" checked={!!d.never_auto} onChange={(v) => set({ never_auto: v })} />
+              <ToggleRow label="Allow AI suggestions" checked={!!d.ai_suggestions} onChange={(v) => set({ ai_suggestions: v })} />
+              <ToggleRow label="Enable fuzzy matching" checked={!!d.fuzzy_match} onChange={(v) => set({ fuzzy_match: v })} />
+              <ToggleRow label="Exact merchant name only" checked={!!d.exact_match_only} onChange={(v) => set({ exact_match_only: v })} />
+              <ToggleRow label="Enable for downloaded" checked={!!d.apply_to_downloaded} onChange={(v) => set({ apply_to_downloaded: v })} />
+              <ToggleRow label="Enable for manual" checked={!!d.apply_to_manual} onChange={(v) => set({ apply_to_manual: v })} />
+              <ToggleRow label="Enable for CSV import" checked={!!d.apply_to_import} onChange={(v) => set({ apply_to_import: v })} />
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Apply only above amount">
+                <Input
+                  type="number"
+                  value={d.min_amount ?? ""}
+                  onChange={(e) => set({ min_amount: e.target.value ? Number(e.target.value) : null })}
+                />
+              </Field>
+              <Field label="Apply only below amount">
+                <Input
+                  type="number"
+                  value={d.max_amount ?? ""}
+                  onChange={(e) => set({ max_amount: e.target.value ? Number(e.target.value) : null })}
+                />
+              </Field>
+              <Field label="Priority">
+                <Input
+                  type="number"
+                  value={d.priority ?? 0}
+                  onChange={(e) => set({ priority: Number(e.target.value || 0) })}
+                />
+              </Field>
+            </div>
+          </Section>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save payee"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
