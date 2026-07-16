@@ -81,7 +81,7 @@ function AccountsPage() {
                   const def = ACCOUNT_TYPE_BY_CATEGORY[a.category as keyof typeof ACCOUNT_TYPE_BY_CATEGORY];
                   const bal = Number(a.current_balance);
                   return (
-                    <Card key={a.id} className="group transition hover:shadow-md hover:border-primary/40">
+                    <Card key={a.id} className="group relative transition hover:shadow-md hover:border-primary/40">
                       <CardContent className="pt-5">
                         <Link to="/accounts/$accountId" params={{ accountId: a.id }} className="absolute inset-0 z-0" aria-label={`Open ${a.name}`} />
                         <div className="relative z-10 flex items-start justify-between gap-2">
