@@ -799,19 +799,185 @@ export type Database = {
           },
         ]
       }
+      transaction_activity: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          details: Json
+          household_id: string
+          id: string
+          transaction_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          details?: Json
+          household_id: string
+          id?: string
+          transaction_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          details?: Json
+          household_id?: string
+          id?: string
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transaction_activity_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transaction_attachments: {
+        Row: {
+          created_at: string
+          file_name: string
+          household_id: string
+          id: string
+          mime_type: string | null
+          size_bytes: number | null
+          storage_path: string
+          transaction_id: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          household_id: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          storage_path: string
+          transaction_id: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          household_id?: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          storage_path?: string
+          transaction_id?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transaction_attachments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transaction_comments: {
+        Row: {
+          author_id: string
+          body: string
+          created_at: string
+          household_id: string
+          id: string
+          transaction_id: string
+        }
+        Insert: {
+          author_id: string
+          body: string
+          created_at?: string
+          household_id: string
+          id?: string
+          transaction_id: string
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          created_at?: string
+          household_id?: string
+          id?: string
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transaction_comments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transaction_views: {
+        Row: {
+          created_at: string
+          filters: Json
+          household_id: string
+          id: string
+          is_default: boolean
+          layout: Json
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          filters?: Json
+          household_id: string
+          id?: string
+          is_default?: boolean
+          layout?: Json
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          filters?: Json
+          household_id?: string
+          id?: string
+          is_default?: boolean
+          layout?: Json
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transactions: {
         Row: {
           account_id: string
           amount: number
+          attachment_count: number
+          budget_id: string | null
           category_id: string | null
+          check_number: string | null
+          cleared_status: string
+          comment_count: number
           created_at: string
           created_by: string | null
           household_id: string
           id: string
+          is_favorite: boolean
+          is_flagged: boolean
+          is_read: boolean
           is_recurring_instance: boolean
+          is_reviewed: boolean
+          memo: string | null
+          merchant: string | null
           note: string | null
+          payment_method: string | null
           split_parent_id: string | null
           tags: string[]
+          tax_code: string | null
           transfer_account_id: string | null
           txn_date: string
           type: Database["public"]["Enums"]["txn_type"]
@@ -820,15 +986,28 @@ export type Database = {
         Insert: {
           account_id: string
           amount: number
+          attachment_count?: number
+          budget_id?: string | null
           category_id?: string | null
+          check_number?: string | null
+          cleared_status?: string
+          comment_count?: number
           created_at?: string
           created_by?: string | null
           household_id: string
           id?: string
+          is_favorite?: boolean
+          is_flagged?: boolean
+          is_read?: boolean
           is_recurring_instance?: boolean
+          is_reviewed?: boolean
+          memo?: string | null
+          merchant?: string | null
           note?: string | null
+          payment_method?: string | null
           split_parent_id?: string | null
           tags?: string[]
+          tax_code?: string | null
           transfer_account_id?: string | null
           txn_date?: string
           type: Database["public"]["Enums"]["txn_type"]
@@ -837,15 +1016,28 @@ export type Database = {
         Update: {
           account_id?: string
           amount?: number
+          attachment_count?: number
+          budget_id?: string | null
           category_id?: string | null
+          check_number?: string | null
+          cleared_status?: string
+          comment_count?: number
           created_at?: string
           created_by?: string | null
           household_id?: string
           id?: string
+          is_favorite?: boolean
+          is_flagged?: boolean
+          is_read?: boolean
           is_recurring_instance?: boolean
+          is_reviewed?: boolean
+          memo?: string | null
+          merchant?: string | null
           note?: string | null
+          payment_method?: string | null
           split_parent_id?: string | null
           tags?: string[]
+          tax_code?: string | null
           transfer_account_id?: string | null
           txn_date?: string
           type?: Database["public"]["Enums"]["txn_type"]
