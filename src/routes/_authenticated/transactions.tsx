@@ -935,26 +935,42 @@ function SummaryCard({ txns, loading, range, className }: { txns: Txn[]; loading
   }, [txns]);
 
   return (
-    <div className={cn("relative overflow-hidden rounded-2xl border bg-card shadow-sm", className)}>
-      <div className="flex items-center justify-between border-b bg-muted/30 px-5 py-3">
+    <div className={cn("rounded-2xl border bg-card p-5 shadow-sm", className)}>
+      <div className="flex items-baseline justify-between gap-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Overview
         </p>
-        <span className="text-[11px] text-muted-foreground">{range}</span>
+        <span className="truncate text-[11px] text-muted-foreground">{range}</span>
       </div>
 
-      <div className="grid grid-cols-3 divide-x">
-        <Stat label="Income" value={formatLakhCrore(s.income)} tone="success" icon={TrendingUp} />
-        <Stat label="Spending" value={formatLakhCrore(s.expense)} tone="destructive" icon={TrendingDown} />
-        <Stat label="Net" value={formatLakhCrore(s.net)} tone={s.net >= 0 ? "success" : "destructive"} icon={ArrowLeftRight} />
+      {/* Hero: Net */}
+      <div className="mt-4">
+        <div className="text-[11px] font-medium text-muted-foreground">Net cash flow</div>
+        <div
+          className={cn(
+            "mt-1 truncate text-3xl font-semibold tabular-nums tracking-tight",
+            s.net >= 0 ? "text-success" : "text-destructive",
+          )}
+          title={formatLakhCrore(s.net)}
+        >
+          {s.net >= 0 ? "+" : "−"}{formatLakhCrore(Math.abs(s.net))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
-        <MiniStat label="Transactions" value={s.count.toLocaleString("en-IN")} />
-        <MiniStat label="Avg. txn" value={formatLakhCrore(s.avg)} />
-        <MiniStat label="Largest exp." value={formatLakhCrore(s.big)} />
-        <MiniStat label="Largest inc." value={formatLakhCrore(s.bigInc)} />
+      {/* Income / Spending split */}
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <SplitStat label="Income" value={formatLakhCrore(s.income)} tone="success" icon={TrendingUp} />
+        <SplitStat label="Spending" value={formatLakhCrore(s.expense)} tone="destructive" icon={TrendingDown} />
       </div>
+
+      {/* Meta row */}
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-3 text-sm">
+        <MetaRow label="Transactions" value={s.count.toLocaleString("en-IN")} />
+        <MetaRow label="Average" value={formatLakhCrore(s.avg)} />
+        <MetaRow label="Largest exp." value={formatLakhCrore(s.big)} />
+        <MetaRow label="Largest inc." value={formatLakhCrore(s.bigInc)} />
+      </div>
+
       {loading && (
         <div className="absolute right-4 top-3">
           <Skeleton className="h-3 w-14" />
@@ -964,16 +980,16 @@ function SummaryCard({ txns, loading, range, className }: { txns: Txn[]; loading
   );
 }
 
-function Stat({ label, value, tone, icon: Icon }: { label: string; value: string; tone: "success" | "destructive"; icon: any }) {
+function SplitStat({ label, value, tone, icon: Icon }: { label: string; value: string; tone: "success" | "destructive"; icon: any }) {
   return (
-    <div className="px-5 py-4">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-        <Icon className={cn("h-3.5 w-3.5", tone === "success" ? "text-success" : "text-destructive")} />
+    <div className="rounded-xl border bg-muted/30 px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        <Icon className={cn("h-3 w-3", tone === "success" ? "text-success" : "text-destructive")} />
         {label}
       </div>
       <div
         className={cn(
-          "mt-1.5 truncate text-xl font-semibold tabular-nums tracking-tight sm:text-2xl",
+          "mt-1 truncate text-base font-semibold tabular-nums",
           tone === "success" ? "text-success" : "text-destructive",
         )}
         title={value}
@@ -983,14 +999,16 @@ function Stat({ label, value, tone, icon: Icon }: { label: string; value: string
     </div>
   );
 }
-function MiniStat({ label, value }: { label: string; value: string }) {
+
+function MetaRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-card px-5 py-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold tabular-nums" title={value}>{value}</div>
+    <div className="flex min-w-0 items-baseline justify-between gap-2">
+      <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+      <span className="truncate text-xs font-medium tabular-nums" title={value}>{value}</span>
     </div>
   );
 }
+
 
 
 /* -------- Viz card -------- */
