@@ -135,6 +135,7 @@ Rules:
           { role: "user", content: userParts },
         ],
         response_format: { type: "json_object" },
+        max_tokens: 32000,
       }),
     });
 
@@ -143,13 +144,12 @@ Rules:
       throw new Error(`AI gateway failed [${res.status}]: ${body}`);
     }
     const json = await res.json();
-    const content = json.choices?.[0]?.message?.content ?? "{}";
+    const content: string = json.choices?.[0]?.message?.content ?? "{}";
     let parsed: any;
     try {
       parsed = JSON.parse(content);
     } catch {
-      const match = content.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : { transactions: [], payees: [] };
+      parsed = salvageJson(content) ?? { transactions: [], payees: [] };
     }
     const txns = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     let payees = Array.isArray(parsed.payees) ? parsed.payees : [];
