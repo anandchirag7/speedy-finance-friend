@@ -129,11 +129,17 @@ function BudgetsPage() {
   const upsertFn = useServerFn(upsertBudgetCategory);
   const deleteFn = useServerFn(deleteBudgetCategory);
   const copyFn = useServerFn(copyPreviousMonth);
+  const trendFn = useServerFn(getBudgetTrend);
 
   const q = useQuery({
     queryKey: ["budget", month],
     queryFn: () => getFn({ data: { month } }),
     staleTime: 30_000,
+  });
+  const trendQ = useQuery({
+    queryKey: ["budget-trend", month],
+    queryFn: () => trendFn({ data: { month, months: 6 } }),
+    staleTime: 60_000,
   });
 
   const upsertMut = useMutation({
