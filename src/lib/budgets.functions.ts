@@ -245,7 +245,7 @@ export const getBudgetTrend = createServerFn({ method: "POST" })
     const rangeStart = iso(new Date(Date.UTC(y, m - data.months, 1)));
     const rangeEnd = iso(new Date(Date.UTC(y, m, 1)));
 
-    const [{ data: txns }, { data: budgets }, { data: bcats }] = await Promise.all([
+    const [{ data: txns }, { data: budgets }] = await Promise.all([
       context.supabase
         .from("transactions")
         .select("txn_date, category_id, amount")
@@ -260,18 +260,8 @@ export const getBudgetTrend = createServerFn({ method: "POST" })
         .eq("period", "monthly")
         .gte("start_date", rangeStart)
         .lt("start_date", rangeEnd),
-      context.supabase
-        .from("budget_categories")
-        .select("budget_id,category_id,amount")
-        .in(
-          "budget_id",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          [] as any,
-        )
-        .or("budget_id.is.null"),
     ]);
 
-    // Second query for budget_categories filtered by fetched budget ids
     const budgetIds = (budgets ?? []).map((b: any) => b.id);
     let bcatRows: Array<{ budget_id: string; category_id: string; amount: number }> = [];
     if (budgetIds.length) {
@@ -281,7 +271,6 @@ export const getBudgetTrend = createServerFn({ method: "POST" })
         .in("budget_id", budgetIds);
       bcatRows = (bc ?? []) as any;
     }
-    void bcats;
 
     const budgetByMonth: Record<string, number> = {};
     const budgetIdToMonth: Record<string, string> = {};
