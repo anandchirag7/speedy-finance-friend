@@ -2,9 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
-import RGL from "react-grid-layout";
-const WidthProvider: any = (RGL as any).WidthProvider;
-
+import RGL, { useContainerWidth } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { LayoutTemplate, Wallet, Settings2 } from "lucide-react";
@@ -16,8 +14,8 @@ import { WIDGET_BY_TYPE } from "@/lib/dashboard-widgets";
 import { TEMPLATES } from "@/lib/dashboard-templates";
 import { DashboardBuilderDialog } from "@/components/dashboard-builder";
 
-const BaseGrid: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
-const GridLayout: any = WidthProvider(BaseGrid);
+const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
+
 
 
 export const Route = createFileRoute("/_authenticated/")({
