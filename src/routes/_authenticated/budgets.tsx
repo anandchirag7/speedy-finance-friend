@@ -587,6 +587,7 @@ function RowGroup({
   depth,
   expanded,
   setExpanded,
+  perCategoryTrend,
   onSave,
   onClear,
 }: {
@@ -594,6 +595,7 @@ function RowGroup({
   depth: number;
   expanded: Record<string, boolean>;
   setExpanded: (v: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
+  perCategoryTrend: Record<string, number[]>;
   onSave: (row: Tree, amount: number) => void;
   onClear: (row: Tree) => void;
 }) {
