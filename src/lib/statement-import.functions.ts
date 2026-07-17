@@ -12,6 +12,70 @@ async function getHouseholdId(ctx: { supabase: any; userId: string }) {
   return data.default_household_id as string;
 }
 
+/**
+ * Attempt to recover a JSON object from a possibly-truncated LLM response.
+ * Walks the string tracking brackets/strings and truncates at the last
+ * safe boundary, then closes any open arrays/objects.
+ */
+function salvageJson(raw: string): any | null {
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  const s = raw.slice(start);
+  const stack: string[] = [];
+  let inStr = false;
+  let esc = false;
+  let lastSafe = -1; // index (exclusive) right after a completed value at depth >=1
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "{" || c === "[") { stack.push(c); continue; }
+    if (c === "}" || c === "]") {
+      stack.pop();
+      lastSafe = i + 1;
+      continue;
+    }
+    if (c === "," && stack.length > 0) {
+      lastSafe = i; // safe to cut before the comma
+    }
+  }
+  const tryParse = (str: string) => {
+    try { return JSON.parse(str); } catch { return undefined; }
+  };
+  const attempts: string[] = [];
+  if (lastSafe > 0) {
+    // Rebuild bracket stack up to lastSafe
+    const truncated = s.slice(0, lastSafe);
+    const st: string[] = [];
+    let inS = false, es = false;
+    for (let i = 0; i < truncated.length; i++) {
+      const c = truncated[i];
+      if (inS) {
+        if (es) es = false;
+        else if (c === "\\") es = true;
+        else if (c === '"') inS = false;
+        continue;
+      }
+      if (c === '"') inS = true;
+      else if (c === "{" || c === "[") st.push(c);
+      else if (c === "}" || c === "]") st.pop();
+    }
+    let closed = truncated;
+    for (let i = st.length - 1; i >= 0; i--) closed += st[i] === "{" ? "}" : "]";
+    attempts.push(closed);
+  }
+  for (const a of attempts) {
+    const v = tryParse(a);
+    if (v) return v;
+  }
+  return null;
+}
+
 const parseInput = z.object({
   accountId: z.string().uuid(),
   bank: z.string().min(1).max(100),
@@ -135,6 +199,7 @@ Rules:
           { role: "user", content: userParts },
         ],
         response_format: { type: "json_object" },
+        max_tokens: 32000,
       }),
     });
 
@@ -143,13 +208,12 @@ Rules:
       throw new Error(`AI gateway failed [${res.status}]: ${body}`);
     }
     const json = await res.json();
-    const content = json.choices?.[0]?.message?.content ?? "{}";
+    const content: string = json.choices?.[0]?.message?.content ?? "{}";
     let parsed: any;
     try {
       parsed = JSON.parse(content);
     } catch {
-      const match = content.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : { transactions: [], payees: [] };
+      parsed = salvageJson(content) ?? { transactions: [], payees: [] };
     }
     const txns = Array.isArray(parsed.transactions) ? parsed.transactions : [];
     let payees = Array.isArray(parsed.payees) ? parsed.payees : [];
