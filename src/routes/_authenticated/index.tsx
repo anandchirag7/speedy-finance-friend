@@ -56,6 +56,7 @@ function Dashboard() {
       createFn({ data: { name: t.name, template_key: t.key, layout: t.layout } }).then(() => refetch());
     }
   }, [dashboards.length]);
+  const { width, containerRef, mounted } = useContainerWidth();
 
 
 
