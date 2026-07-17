@@ -136,6 +136,7 @@ function BudgetsPage() {
   const [period, setPeriod] = useState<"monthly" | "quarterly" | "annual">("monthly");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [showEditor, setShowEditor] = useState(false);
   const qc = useQueryClient();
   const getFn = useServerFn(getBudgetForMonth);
   const upsertFn = useServerFn(upsertBudgetCategory);
