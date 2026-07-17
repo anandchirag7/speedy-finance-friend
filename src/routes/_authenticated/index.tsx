@@ -135,9 +135,10 @@ function Dashboard() {
           </div>
         </div>
       ) : (
-        <div ref={containerRef as any}>
-          <GridLayout
+        <div ref={containerRef}>
+          {width > 0 && <GridLayout
             width={width}
+
             gridConfig={{ cols: 12, rowHeight: 48, margin: [16, 16], containerPadding: [0, 0] }}
             dragConfig={{ isDraggable: false }}
             resizeConfig={{ isResizable: false }}
