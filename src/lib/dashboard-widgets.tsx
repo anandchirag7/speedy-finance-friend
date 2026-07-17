@@ -63,19 +63,24 @@ function Shell({ title, description, icon: Icon, action, children }: {
   action?: ReactNode; children: ReactNode;
 }) {
   return (
-    <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="pb-2">
+    <Card className="h-full w-full flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <CardHeader className="flex-none px-4 pt-3 pb-2 space-y-0">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-base">
-              {Icon && <Icon className="h-4 w-4" />}<span className="truncate">{title}</span>
+            <CardTitle className="flex items-center gap-2 text-sm font-medium text-foreground">
+              {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+              <span className="truncate">{title}</span>
             </CardTitle>
-            {description && <CardDescription className="truncate">{description}</CardDescription>}
+            {description && (
+              <CardDescription className="mt-0.5 truncate text-xs">{description}</CardDescription>
+            )}
           </div>
           {action}
         </div>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 overflow-auto">{children}</CardContent>
+      <CardContent className="flex-1 min-h-0 px-4 pb-4 pt-1 overflow-hidden">
+        <div className="h-full w-full overflow-hidden">{children}</div>
+      </CardContent>
     </Card>
   );
 }
