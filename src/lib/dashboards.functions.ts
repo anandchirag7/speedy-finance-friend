@@ -41,7 +41,7 @@ export const listDashboards = createServerFn({ method: "GET" })
       .select("*")
       .order("created_at", { ascending: true });
     if (error) throw error;
-    return (data ?? []) as DashboardRow[];
+    return (data ?? []) as unknown as DashboardRow[];
   });
 
 export const createDashboard = createServerFn({ method: "POST" })
@@ -64,7 +64,7 @@ export const createDashboard = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw error;
-    return row as DashboardRow;
+    return row as unknown as DashboardRow;
   });
 
 export const updateDashboard = createServerFn({ method: "POST" })
@@ -76,7 +76,7 @@ export const updateDashboard = createServerFn({ method: "POST" })
     settings?: Record<string, any>;
   }) => d)
   .handler(async ({ data, context }) => {
-    const patch: Record<string, any> = {};
+    const patch: Record<string, any> = {} as any;
     if (data.name !== undefined) patch.name = data.name;
     if (data.layout !== undefined) patch.layout = data.layout;
     if (data.settings !== undefined) patch.settings = data.settings;
@@ -87,7 +87,7 @@ export const updateDashboard = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw error;
-    return row as DashboardRow;
+    return row as unknown as DashboardRow;
   });
 
 export const deleteDashboard = createServerFn({ method: "POST" })
@@ -151,5 +151,5 @@ export const duplicateDashboard = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw error;
-    return row as DashboardRow;
+    return row as unknown as DashboardRow;
   });
