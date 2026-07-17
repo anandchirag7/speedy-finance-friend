@@ -375,6 +375,53 @@ export type Database = {
           },
         ]
       }
+      dashboards: {
+        Row: {
+          created_at: string
+          household_id: string
+          id: string
+          is_default: boolean
+          layout: Json
+          name: string
+          settings: Json
+          template_key: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          household_id: string
+          id?: string
+          is_default?: boolean
+          layout?: Json
+          name: string
+          settings?: Json
+          template_key?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          household_id?: string
+          id?: string
+          is_default?: boolean
+          layout?: Json
+          name?: string
+          settings?: Json
+          template_key?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dashboards_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       goal_accounts: {
         Row: {
           account_id: string
