@@ -35,7 +35,17 @@ import {
 } from "@/lib/dashboards.functions";
 import { getDashboard } from "@/lib/finance.functions";
 
-const ResponsiveGrid = WidthProvider(GridLayout);
+function ResponsiveGrid(props: any) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(1000);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return <div ref={ref}><GridLayout width={w} {...props} /></div>;
+}
 const uid = () => Math.random().toString(36).slice(2, 10);
 const FAVS_KEY = "paisa.widgetFavs";
 const RECENT_KEY = "paisa.widgetRecent";
