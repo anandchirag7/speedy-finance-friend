@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useRef, useState } from "react";
 import RGL from "react-grid-layout";
+const WidthProvider: any = (RGL as any).WidthProvider;
+
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { LayoutTemplate, Wallet, Settings2 } from "lucide-react";
@@ -14,7 +16,9 @@ import { WIDGET_BY_TYPE } from "@/lib/dashboard-widgets";
 import { TEMPLATES } from "@/lib/dashboard-templates";
 import { DashboardBuilderDialog } from "@/components/dashboard-builder";
 
-const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
+const BaseGrid: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
+const GridLayout: any = WidthProvider(BaseGrid);
+
 
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "Dashboard — Paisa" }] }),
@@ -55,14 +59,8 @@ function Dashboard() {
     }
   }, [dashboards.length]);
 
-  const ref = useRef<HTMLDivElement>(null);
-  const [w, setW] = useState(1200);
-  useEffect(() => {
-    if (!ref.current) return;
-    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width));
-    ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, []);
+
+
 
   if (isLoading && !metrics) return <div className="p-6 text-muted-foreground">Loading…</div>;
 
@@ -126,27 +124,31 @@ function Dashboard() {
         </div>
       ) : (
         <div ref={ref}>
-          <GridLayout
-            width={w}
-            cols={12}
-            rowHeight={64}
-            margin={[12, 12]}
-            isDraggable={false}
-            isResizable={false}
-            layout={layout.map((l: any) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: true }))}
-          >
-            {layout.map((item: any) => {
-              const def = WIDGET_BY_TYPE[item.type];
-              return (
-                <div key={item.i} className="rounded-2xl bg-card shadow-sm ring-1 ring-border overflow-hidden">
-                  {def ? def.render({ data: metrics, settings: item.settings }) : (
-                    <div className="grid h-full place-items-center text-sm text-muted-foreground">Unknown: {item.type}</div>
-                  )}
-                </div>
-              );
-            })}
-          </GridLayout>
+          {w > 0 && (
+            <GridLayout
+              width={w}
+              cols={12}
+              rowHeight={48}
+              margin={[16, 16]}
+              containerPadding={[0, 0]}
+              isDraggable={false}
+              isResizable={false}
+              layout={layout.map((l: any) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: true }))}
+            >
+              {layout.map((item: any) => {
+                const def = WIDGET_BY_TYPE[item.type];
+                return (
+                  <div key={item.i} className="overflow-hidden">
+                    {def ? def.render({ data: metrics, settings: item.settings }) : (
+                      <div className="grid h-full place-items-center text-sm text-muted-foreground">Unknown: {item.type}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </GridLayout>
+          )}
         </div>
+
       )}
 
       <DashboardBuilderDialog
