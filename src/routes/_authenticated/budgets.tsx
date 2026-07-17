@@ -118,6 +118,18 @@ function statusFor(spent: number, budget: number): { label: string; tone: "green
   return { label: "On track", tone: "green" };
 }
 
+function aggregateSparkline(node: Tree, perCat: Record<string, number[]>): number[] {
+  const walk = (n: Tree, acc: number[]) => {
+    const own = perCat[n.id];
+    if (own) {
+      for (let i = 0; i < own.length; i++) acc[i] = (acc[i] ?? 0) + own[i];
+    }
+    for (const c of n.children) walk(c, acc);
+    return acc;
+  };
+  return walk(node, []);
+}
+
 // ---------- page ----------
 function BudgetsPage() {
   const [month, setMonth] = useState(currentMonth);
