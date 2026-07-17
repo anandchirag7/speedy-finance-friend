@@ -147,7 +147,7 @@ function Dashboard() {
             {layout.map((item: any) => {
               const def = WIDGET_BY_TYPE[item.type];
               return (
-                <div key={item.i} className="overflow-hidden">
+                <div key={item.i} className="h-full w-full">
                   {def ? def.render({ data: metrics, settings: item.settings }) : (
                     <div className="grid h-full place-items-center text-sm text-muted-foreground">Unknown: {item.type}</div>
                   )}
