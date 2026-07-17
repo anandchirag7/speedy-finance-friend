@@ -24,8 +24,10 @@ import {
   copyPreviousMonth,
   deleteBudgetCategory,
   getBudgetForMonth,
+  getBudgetTrend,
   upsertBudgetCategory,
 } from "@/lib/budgets.functions";
+import { BudgetAnalytics, Sparkline } from "@/components/budgets/BudgetAnalytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
