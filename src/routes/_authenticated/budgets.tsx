@@ -136,6 +136,7 @@ function BudgetsPage() {
   const [period, setPeriod] = useState<"monthly" | "quarterly" | "annual">("monthly");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [showEditor, setShowEditor] = useState(false);
   const qc = useQueryClient();
   const getFn = useServerFn(getBudgetForMonth);
   const upsertFn = useServerFn(upsertBudgetCategory);
@@ -221,13 +222,15 @@ function BudgetsPage() {
       <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-8 md:py-8 space-y-6">
         {q.isLoading ? (
           <LoadingState />
-        ) : !anyBudgetSet && (data?.categories ?? []).every((c) => c.spent === 0) ? (
+        ) : !showEditor && !anyBudgetSet && (data?.categories ?? []).every((c) => c.spent === 0) ? (
           <EmptyState
             month={month}
             onCopy={() => copyMut.mutate()}
             onCreate={() => {
-              // scroll to table below
-              document.getElementById("budget-table")?.scrollIntoView({ behavior: "smooth" });
+              setShowEditor(true);
+              requestAnimationFrame(() => {
+                document.getElementById("budget-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              });
             }}
           />
         ) : (
