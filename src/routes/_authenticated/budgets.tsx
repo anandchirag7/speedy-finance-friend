@@ -24,8 +24,10 @@ import {
   copyPreviousMonth,
   deleteBudgetCategory,
   getBudgetForMonth,
+  getBudgetTrend,
   upsertBudgetCategory,
 } from "@/lib/budgets.functions";
+import { BudgetAnalytics, Sparkline } from "@/components/budgets/BudgetAnalytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,6 +118,18 @@ function statusFor(spent: number, budget: number): { label: string; tone: "green
   return { label: "On track", tone: "green" };
 }
 
+function aggregateSparkline(node: Tree, perCat: Record<string, number[]>): number[] {
+  const walk = (n: Tree, acc: number[]) => {
+    const own = perCat[n.id];
+    if (own) {
+      for (let i = 0; i < own.length; i++) acc[i] = (acc[i] ?? 0) + own[i];
+    }
+    for (const c of n.children) walk(c, acc);
+    return acc;
+  };
+  return walk(node, []);
+}
+
 // ---------- page ----------
 function BudgetsPage() {
   const [month, setMonth] = useState(currentMonth);
@@ -127,11 +141,17 @@ function BudgetsPage() {
   const upsertFn = useServerFn(upsertBudgetCategory);
   const deleteFn = useServerFn(deleteBudgetCategory);
   const copyFn = useServerFn(copyPreviousMonth);
+  const trendFn = useServerFn(getBudgetTrend);
 
   const q = useQuery({
     queryKey: ["budget", month],
     queryFn: () => getFn({ data: { month } }),
     staleTime: 30_000,
+  });
+  const trendQ = useQuery({
+    queryKey: ["budget-trend", month],
+    queryFn: () => trendFn({ data: { month, months: 6 } }),
+    staleTime: 60_000,
   });
 
   const upsertMut = useMutation({
@@ -268,6 +288,7 @@ function BudgetsPage() {
                   expanded={expanded}
                   setExpanded={setExpanded}
                   budgetId={data!.budget.id}
+                  perCategoryTrend={trendQ.data?.perCategory ?? {}}
                   onSave={(row, amount) =>
                     upsertMut.mutate({ budget_id: data!.budget.id, category_id: row.id, amount })
                   }
@@ -278,7 +299,22 @@ function BudgetsPage() {
               </CardContent>
             </Card>
 
-            <AnalyticsPlaceholder />
+            <BudgetAnalytics
+              month={month}
+              totalBudget={totals.budget}
+              totalSpent={totals.spent}
+              categorySummaries={tree.flatMap(function flat(n): Array<{ id: string; name: string; color: string | null; budget: number; spent: number; hasChildren: boolean }> {
+                const self = {
+                  id: n.id,
+                  name: n.name,
+                  color: n.color,
+                  budget: n.children.length ? n.totalBudget : Number(n.budget) || 0,
+                  spent: n.children.length ? n.totalSpent : Number(n.spent) || 0,
+                  hasChildren: n.children.length > 0,
+                };
+                return [self, ...n.children.flatMap(flat)];
+              })}
+            />
             <AiInsightsPlaceholder />
           </>
         )}
@@ -504,6 +540,7 @@ function BudgetTable({
   rows,
   expanded,
   setExpanded,
+  perCategoryTrend,
   onSave,
   onClear,
 }: {
@@ -511,12 +548,13 @@ function BudgetTable({
   expanded: Record<string, boolean>;
   setExpanded: (v: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
   budgetId: string;
+  perCategoryTrend: Record<string, number[]>;
   onSave: (row: Tree, amount: number) => void;
   onClear: (row: Tree) => void;
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] text-sm">
+      <table className="w-full min-w-[980px] text-sm">
         <thead className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur">
           <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
             <th className="px-4 py-3">Category</th>
@@ -524,6 +562,7 @@ function BudgetTable({
             <th className="px-4 py-3 text-right">Spent</th>
             <th className="px-4 py-3 text-right">Remaining</th>
             <th className="px-4 py-3">Utilization</th>
+            <th className="px-4 py-3">Trend</th>
             <th className="px-4 py-3 text-right">Last month</th>
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3 w-10"></th>
@@ -532,7 +571,7 @@ function BudgetTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+              <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
                 No categories match your search.
               </td>
             </tr>
@@ -544,6 +583,7 @@ function BudgetTable({
               depth={0}
               expanded={expanded}
               setExpanded={setExpanded}
+              perCategoryTrend={perCategoryTrend}
               onSave={onSave}
               onClear={onClear}
             />
@@ -559,6 +599,7 @@ function RowGroup({
   depth,
   expanded,
   setExpanded,
+  perCategoryTrend,
   onSave,
   onClear,
 }: {
@@ -566,6 +607,7 @@ function RowGroup({
   depth: number;
   expanded: Record<string, boolean>;
   setExpanded: (v: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
+  perCategoryTrend: Record<string, number[]>;
   onSave: (row: Tree, amount: number) => void;
   onClear: (row: Tree) => void;
 }) {
@@ -631,6 +673,12 @@ function RowGroup({
             <span className="w-10 text-right text-xs tabular-nums text-slate-500">{pct.toFixed(0)}%</span>
           </div>
         </td>
+        <td className="px-4 py-3">
+          <Sparkline
+            values={aggregateSparkline(row, perCategoryTrend)}
+            color={st.tone === "red" ? "#EF4444" : st.tone === "yellow" ? "#F59E0B" : "#6366F1"}
+          />
+        </td>
         <td className="px-4 py-3 text-right tabular-nums text-slate-500">{formatINR(displayPrev)}</td>
         <td className="px-4 py-3">
           <StatusBadge tone={st.tone} label={st.label} />
@@ -666,7 +714,7 @@ function RowGroup({
       </tr>
       {isOpen &&
         row.children.map((c) => (
-          <RowGroup key={c.id} row={c} depth={depth + 1} expanded={expanded} setExpanded={setExpanded} onSave={onSave} onClear={onClear} />
+          <RowGroup key={c.id} row={c} depth={depth + 1} expanded={expanded} setExpanded={setExpanded} perCategoryTrend={perCategoryTrend} onSave={onSave} onClear={onClear} />
         ))}
     </>
   );

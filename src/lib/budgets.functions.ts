@@ -220,3 +220,93 @@ export const copyPreviousMonth = createServerFn({ method: "POST" })
     if (error) throw error;
     return { copied: rows.length };
   });
+
+export const getBudgetTrend = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        month: z.string().regex(/^\d{4}-\d{2}$/),
+        months: z.number().int().min(2).max(24).default(6),
+      })
+      .parse(d),
+  )
+  .handler(async ({ context, data }) => {
+    const householdId = await getHouseholdId(context);
+    const [y, m] = data.month.split("-").map(Number);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const monthKey = (d: Date) =>
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    const months: string[] = [];
+    for (let i = data.months - 1; i >= 0; i--) {
+      months.push(monthKey(new Date(Date.UTC(y, m - 1 - i, 1))));
+    }
+    const rangeStart = iso(new Date(Date.UTC(y, m - data.months, 1)));
+    const rangeEnd = iso(new Date(Date.UTC(y, m, 1)));
+
+    const [{ data: txns }, { data: budgets }] = await Promise.all([
+      context.supabase
+        .from("transactions")
+        .select("txn_date, category_id, amount")
+        .eq("household_id", householdId)
+        .eq("type", "expense")
+        .gte("txn_date", rangeStart)
+        .lt("txn_date", rangeEnd),
+      context.supabase
+        .from("budgets")
+        .select("id,start_date")
+        .eq("household_id", householdId)
+        .eq("period", "monthly")
+        .gte("start_date", rangeStart)
+        .lt("start_date", rangeEnd),
+    ]);
+
+    const budgetIds = (budgets ?? []).map((b: any) => b.id);
+    let bcatRows: Array<{ budget_id: string; category_id: string; amount: number }> = [];
+    if (budgetIds.length) {
+      const { data: bc } = await context.supabase
+        .from("budget_categories")
+        .select("budget_id,category_id,amount")
+        .in("budget_id", budgetIds);
+      bcatRows = (bc ?? []) as any;
+    }
+
+    const budgetByMonth: Record<string, number> = {};
+    const budgetIdToMonth: Record<string, string> = {};
+    for (const b of budgets ?? []) {
+      const mk = String(b.start_date).slice(0, 7);
+      budgetIdToMonth[b.id] = mk;
+      budgetByMonth[mk] = budgetByMonth[mk] ?? 0;
+    }
+    for (const bc of bcatRows) {
+      const mk = budgetIdToMonth[bc.budget_id];
+      if (!mk) continue;
+      budgetByMonth[mk] = (budgetByMonth[mk] ?? 0) + Number(bc.amount);
+    }
+
+    const spentByMonth: Record<string, number> = {};
+    const spentByCatMonth: Record<string, Record<string, number>> = {};
+    for (const t of txns ?? []) {
+      const mk = String(t.txn_date).slice(0, 7);
+      spentByMonth[mk] = (spentByMonth[mk] ?? 0) + Number(t.amount);
+      if (t.category_id) {
+        spentByCatMonth[t.category_id] = spentByCatMonth[t.category_id] ?? {};
+        spentByCatMonth[t.category_id][mk] =
+          (spentByCatMonth[t.category_id][mk] ?? 0) + Number(t.amount);
+      }
+    }
+
+    const trend = months.map((mk) => ({
+      month: mk,
+      budget: budgetByMonth[mk] ?? 0,
+      spent: spentByMonth[mk] ?? 0,
+    }));
+
+    const perCategory: Record<string, number[]> = {};
+    for (const [catId, byMonth] of Object.entries(spentByCatMonth)) {
+      perCategory[catId] = months.map((mk) => byMonth[mk] ?? 0);
+    }
+
+    return { months, trend, perCategory };
+  });
