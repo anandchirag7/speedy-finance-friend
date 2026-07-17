@@ -528,6 +528,7 @@ function BudgetTable({
   rows,
   expanded,
   setExpanded,
+  perCategoryTrend,
   onSave,
   onClear,
 }: {
@@ -535,12 +536,13 @@ function BudgetTable({
   expanded: Record<string, boolean>;
   setExpanded: (v: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)) => void;
   budgetId: string;
+  perCategoryTrend: Record<string, number[]>;
   onSave: (row: Tree, amount: number) => void;
   onClear: (row: Tree) => void;
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] text-sm">
+      <table className="w-full min-w-[980px] text-sm">
         <thead className="sticky top-0 z-10 bg-slate-50/80 backdrop-blur">
           <tr className="text-left text-[11px] font-medium uppercase tracking-wide text-slate-500">
             <th className="px-4 py-3">Category</th>
@@ -548,6 +550,7 @@ function BudgetTable({
             <th className="px-4 py-3 text-right">Spent</th>
             <th className="px-4 py-3 text-right">Remaining</th>
             <th className="px-4 py-3">Utilization</th>
+            <th className="px-4 py-3">Trend</th>
             <th className="px-4 py-3 text-right">Last month</th>
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3 w-10"></th>
@@ -556,7 +559,7 @@ function BudgetTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+              <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
                 No categories match your search.
               </td>
             </tr>
@@ -568,6 +571,7 @@ function BudgetTable({
               depth={0}
               expanded={expanded}
               setExpanded={setExpanded}
+              perCategoryTrend={perCategoryTrend}
               onSave={onSave}
               onClear={onClear}
             />
