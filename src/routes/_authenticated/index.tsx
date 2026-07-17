@@ -137,12 +137,9 @@ function Dashboard() {
         <div ref={containerRef as any}>
           <GridLayout
             width={width}
-            cols={12}
-            rowHeight={48}
-            margin={[16, 16]}
-            containerPadding={[0, 0]}
-            isDraggable={false}
-            isResizable={false}
+            gridConfig={{ cols: 12, rowHeight: 48, margin: [16, 16], containerPadding: [0, 0] }}
+            dragConfig={{ isDraggable: false }}
+            resizeConfig={{ isResizable: false }}
             layout={layout.map((l: any) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: true }))}
           >
             {layout.map((item: any) => {
@@ -156,6 +153,7 @@ function Dashboard() {
               );
             })}
           </GridLayout>
+
 
         </div>
 
