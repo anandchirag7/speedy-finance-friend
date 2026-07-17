@@ -74,13 +74,13 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-display font-semibold">
+        <div className="flex items-center gap-2 px-2 py-1.5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground font-display font-semibold">
             ₹
           </div>
-          <div className="flex flex-col">
-            <span className="font-display text-base font-semibold leading-none">Paisa</span>
-            <span className="text-[10px] text-muted-foreground">Personal Finance</span>
+          <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
+            <span className="font-display text-base font-semibold leading-none truncate">Paisa</span>
+            <span className="text-[10px] text-muted-foreground truncate">Personal Finance</span>
           </div>
         </div>
       </SidebarHeader>
