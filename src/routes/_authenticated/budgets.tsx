@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { formatMoney } from "@/lib/format";
+import { formatINR } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/budgets")({
   head: () => ({
@@ -397,20 +397,20 @@ function KpiRow(props: {
   momDelta: number;
 }) {
   const items = [
-    { label: "Total Budget", value: formatMoney(props.totalBudget), sub: "Planned this month" },
+    { label: "Total Budget", value: formatINR(props.totalBudget), sub: "Planned this month" },
     {
       label: "Total Spent",
-      value: formatMoney(props.totalSpent),
+      value: formatINR(props.totalSpent),
       sub:
         props.momDelta === 0
           ? "No last-month data"
           : `${props.momDelta > 0 ? "+" : ""}${props.momDelta.toFixed(1)}% vs last month`,
       trend: props.momDelta,
     },
-    { label: "Remaining", value: formatMoney(props.remaining), sub: "Left to spend" },
-    { label: "Daily Remaining", value: formatMoney(props.dailyRemaining), sub: "Per remaining day" },
+    { label: "Remaining", value: formatINR(props.remaining), sub: "Left to spend" },
+    { label: "Daily Remaining", value: formatINR(props.dailyRemaining), sub: "Per remaining day" },
     { label: "Utilization", value: `${props.utilization.toFixed(1)}%`, sub: "Of total budget" },
-    { label: "Projected Spend", value: formatMoney(props.projected), sub: "Month-end forecast" },
+    { label: "Projected Spend", value: formatINR(props.projected), sub: "Month-end forecast" },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -467,8 +467,8 @@ function ProgressCard({
           <div>
             <div className="text-sm font-medium text-slate-500">Overall progress</div>
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-semibold text-slate-900">{formatMoney(totalSpent)}</span>
-              <span className="text-sm text-slate-500">of {formatMoney(totalBudget)}</span>
+              <span className="text-2xl font-semibold text-slate-900">{formatINR(totalSpent)}</span>
+              <span className="text-sm text-slate-500">of {formatINR(totalBudget)}</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -492,7 +492,7 @@ function ProgressCard({
         <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
           <span className="flex items-center gap-1.5"><span className={cn("h-2 w-2 rounded-full", health.tone)} /> Spent {pct.toFixed(1)}%</span>
           <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-300" /> Forecast {projectedPct.toFixed(1)}%</span>
-          <span className={cn("flex items-center gap-1.5 font-medium", health.text)}>Forecast {formatMoney(projected)}</span>
+          <span className={cn("flex items-center gap-1.5 font-medium", health.text)}>Forecast {formatINR(projected)}</span>
         </div>
       </CardContent>
     </Card>
@@ -605,14 +605,14 @@ function RowGroup({
         </td>
         <td className="px-4 py-3 text-right">
           {hasChildren ? (
-            <span className="font-medium text-slate-900">{formatMoney(displayBudget)}</span>
+            <span className="font-medium text-slate-900">{formatINR(displayBudget)}</span>
           ) : (
             <BudgetCell value={row.budget} onSave={(n) => onSave(row, n)} onClear={() => onClear(row)} />
           )}
         </td>
-        <td className="px-4 py-3 text-right tabular-nums text-slate-800">{formatMoney(displaySpent)}</td>
+        <td className="px-4 py-3 text-right tabular-nums text-slate-800">{formatINR(displaySpent)}</td>
         <td className={cn("px-4 py-3 text-right tabular-nums", remaining === 0 && displayBudget > 0 ? "text-rose-600" : "text-slate-800")}>
-          {formatMoney(remaining)}
+          {formatINR(remaining)}
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
@@ -631,7 +631,7 @@ function RowGroup({
             <span className="w-10 text-right text-xs tabular-nums text-slate-500">{pct.toFixed(0)}%</span>
           </div>
         </td>
-        <td className="px-4 py-3 text-right tabular-nums text-slate-500">{formatMoney(displayPrev)}</td>
+        <td className="px-4 py-3 text-right tabular-nums text-slate-500">{formatINR(displayPrev)}</td>
         <td className="px-4 py-3">
           <StatusBadge tone={st.tone} label={st.label} />
         </td>
@@ -750,7 +750,7 @@ function BudgetCell({ value, onSave, onClear }: { value: number; onSave: (n: num
         value > 0 ? "text-slate-900 hover:bg-slate-100" : "text-slate-400 hover:bg-slate-100",
       )}
     >
-      {value > 0 ? formatMoney(value) : "Set budget"}
+      {value > 0 ? formatINR(value) : "Set budget"}
     </button>
   );
 }
