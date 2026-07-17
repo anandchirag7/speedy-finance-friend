@@ -661,6 +661,12 @@ function RowGroup({
             <span className="w-10 text-right text-xs tabular-nums text-slate-500">{pct.toFixed(0)}%</span>
           </div>
         </td>
+        <td className="px-4 py-3">
+          <Sparkline
+            values={aggregateSparkline(row, perCategoryTrend)}
+            color={st.tone === "red" ? "#EF4444" : st.tone === "yellow" ? "#F59E0B" : "#6366F1"}
+          />
+        </td>
         <td className="px-4 py-3 text-right tabular-nums text-slate-500">{formatINR(displayPrev)}</td>
         <td className="px-4 py-3">
           <StatusBadge tone={st.tone} label={st.label} />
