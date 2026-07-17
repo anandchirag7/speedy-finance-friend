@@ -82,7 +82,7 @@ export const updateDashboard = createServerFn({ method: "POST" })
     if (data.settings !== undefined) patch.settings = data.settings;
     const { data: row, error } = await context.supabase
       .from("dashboards")
-      .update(patch)
+      .update(patch as any)
       .eq("id", data.id)
       .select("*")
       .single();
