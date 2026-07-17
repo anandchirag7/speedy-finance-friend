@@ -123,31 +123,29 @@ function Dashboard() {
           </div>
         </div>
       ) : (
-        <div ref={ref}>
-          {w > 0 && (
-            <GridLayout
-              width={w}
-              cols={12}
-              rowHeight={48}
-              margin={[16, 16]}
-              containerPadding={[0, 0]}
-              isDraggable={false}
-              isResizable={false}
-              layout={layout.map((l: any) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: true }))}
-            >
-              {layout.map((item: any) => {
-                const def = WIDGET_BY_TYPE[item.type];
-                return (
-                  <div key={item.i} className="overflow-hidden">
-                    {def ? def.render({ data: metrics, settings: item.settings }) : (
-                      <div className="grid h-full place-items-center text-sm text-muted-foreground">Unknown: {item.type}</div>
-                    )}
-                  </div>
-                );
-              })}
-            </GridLayout>
-          )}
+        <div>
+          <GridLayout
+            cols={12}
+            rowHeight={48}
+            margin={[16, 16]}
+            containerPadding={[0, 0]}
+            isDraggable={false}
+            isResizable={false}
+            layout={layout.map((l: any) => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h, static: true }))}
+          >
+            {layout.map((item: any) => {
+              const def = WIDGET_BY_TYPE[item.type];
+              return (
+                <div key={item.i} className="overflow-hidden">
+                  {def ? def.render({ data: metrics, settings: item.settings }) : (
+                    <div className="grid h-full place-items-center text-sm text-muted-foreground">Unknown: {item.type}</div>
+                  )}
+                </div>
+              );
+            })}
+          </GridLayout>
         </div>
+
 
       )}
 
