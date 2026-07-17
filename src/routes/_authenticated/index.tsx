@@ -154,7 +154,7 @@ function Dashboard() {
                 </div>
               );
             })}
-          </GridLayout>
+          </GridLayout>}
 
 
         </div>
