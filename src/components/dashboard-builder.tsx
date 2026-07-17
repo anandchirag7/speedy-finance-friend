@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import RGL, { WidthProvider } from "react-grid-layout";
+import RGL from "react-grid-layout";
 type Layout = { i: string; x: number; y: number; w: number; h: number };
-const GridLayout: any = RGL;
+const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import {
