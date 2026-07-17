@@ -57,7 +57,18 @@ function Dashboard() {
       createFn({ data: { name: t.name, template_key: t.key, layout: t.layout } }).then(() => refetch());
     }
   }, [dashboards.length]);
-  const { width, containerRef, mounted } = useContainerWidth();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(1200);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => setWidth(el.clientWidth || 1200);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
 
 
 
