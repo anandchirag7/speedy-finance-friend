@@ -276,6 +276,7 @@ function BudgetsPage() {
                   expanded={expanded}
                   setExpanded={setExpanded}
                   budgetId={data!.budget.id}
+                  perCategoryTrend={trendQ.data?.perCategory ?? {}}
                   onSave={(row, amount) =>
                     upsertMut.mutate({ budget_id: data!.budget.id, category_id: row.id, amount })
                   }
@@ -286,7 +287,22 @@ function BudgetsPage() {
               </CardContent>
             </Card>
 
-            <AnalyticsPlaceholder />
+            <BudgetAnalytics
+              month={month}
+              totalBudget={totals.budget}
+              totalSpent={totals.spent}
+              categorySummaries={tree.flatMap(function flat(n): Array<{ id: string; name: string; color: string | null; budget: number; spent: number; hasChildren: boolean }> {
+                const self = {
+                  id: n.id,
+                  name: n.name,
+                  color: n.color,
+                  budget: n.children.length ? n.totalBudget : Number(n.budget) || 0,
+                  spent: n.children.length ? n.totalSpent : Number(n.spent) || 0,
+                  hasChildren: n.children.length > 0,
+                };
+                return [self, ...n.children.flatMap(flat)];
+              })}
+            />
             <AiInsightsPlaceholder />
           </>
         )}
