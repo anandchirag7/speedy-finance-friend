@@ -702,7 +702,7 @@ function RowGroup({
       </tr>
       {isOpen &&
         row.children.map((c) => (
-          <RowGroup key={c.id} row={c} depth={depth + 1} expanded={expanded} setExpanded={setExpanded} onSave={onSave} onClear={onClear} />
+          <RowGroup key={c.id} row={c} depth={depth + 1} expanded={expanded} setExpanded={setExpanded} perCategoryTrend={perCategoryTrend} onSave={onSave} onClear={onClear} />
         ))}
     </>
   );
