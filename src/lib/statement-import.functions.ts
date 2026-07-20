@@ -309,13 +309,20 @@ Return ONLY JSON: { "payees": [ { "name": "Amazon", "descriptions": ["AMZN MKTP"
     for (const c of clusters) {
       const key = (c.name || "").trim().toLowerCase();
       if (!key) continue;
+      // Expand each normalized rep back to the raw descriptions it grouped
+      const expanded: string[] = [];
+      for (const rep of c.descriptions ?? []) {
+        const raws = groupsByNorm.get(rep);
+        if (raws) expanded.push(...raws);
+        else expanded.push(rep);
+      }
       const existing = merged.get(key);
       if (existing) {
-        for (const d of c.descriptions ?? []) existing.descriptions.add(d);
+        for (const d of expanded) existing.descriptions.add(d);
       } else {
         merged.set(key, {
           name: c.name.trim(),
-          descriptions: new Set(c.descriptions ?? []),
+          descriptions: new Set(expanded),
           suggestedCategory: c.suggestedCategory ?? "",
           type: (c.type as any) ?? "expense",
           isExisting: !!c.isExisting,
@@ -339,6 +346,7 @@ Return ONLY JSON: { "payees": [ { "name": "Amazon", "descriptions": ["AMZN MKTP"
       });
     }
   }
+
 
   return Array.from(merged.values()).map((v) => ({
     name: v.name,
