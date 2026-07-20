@@ -427,7 +427,11 @@ const parseInput = z.object({
   base64: z.string(),
 });
 
-export const parseStatement = createServerFn({ method: "POST" })
+/**
+ * Step 1: fast deterministic extraction (CSV/Excel) or AI extraction (PDF).
+ * No payee clustering — returns raw transactions + reference data for step 2.
+ */
+export const extractStatementRows = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => parseInput.parse(d))
   .handler(async ({ context, data }) => {
@@ -437,16 +441,12 @@ export const parseStatement = createServerFn({ method: "POST" })
       .from("categories")
       .select("id, name, kind, parent_id")
       .eq("household_id", householdId);
-    const categoryList = (cats ?? []).map((c: any) => c.name).join(", ");
 
     const { data: existingPayeesRows } = await context.supabase
       .from("memorized_payees")
       .select("id, merchant, category_id")
       .eq("household_id", householdId);
     const existingPayees = existingPayeesRows ?? [];
-
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
 
     const lower = data.fileName.toLowerCase();
     const isPdf = data.mimeType === "application/pdf" || lower.endsWith(".pdf");
@@ -467,6 +467,7 @@ export const parseStatement = createServerFn({ method: "POST" })
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, blankrows: false }) as any[][];
         const rows = extractRowsFromAOA(aoa);
         extracted.push(...rows);
+        if (extracted.length) break;
       }
     } else if (isCsv) {
       const XLSX = await import("xlsx");
@@ -475,6 +476,9 @@ export const parseStatement = createServerFn({ method: "POST" })
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, blankrows: false }) as any[][];
       extracted = extractRowsFromAOA(aoa);
     } else if (isPdf) {
+      const apiKey = process.env.LOVABLE_API_KEY;
+      if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+      const categoryList = (cats ?? []).map((c: any) => c.name).join(", ");
       const { transactions } = await parsePdfWithAI(
         data.base64,
         data.fileName,
@@ -488,49 +492,49 @@ export const parseStatement = createServerFn({ method: "POST" })
       throw new Error("Unsupported file type. Upload CSV, Excel, or PDF.");
     }
 
-    if (!extracted.length) {
-      return { transactions: [], payees: [], categories: cats ?? [], existingPayees };
-    }
-
-    // Cluster unique descriptions only — huge speedup on 1000+ row statements
-    const uniqueDescriptions = Array.from(new Set(extracted.map((t) => t.description)));
-    const clusters = await clusterPayeesWithAI(
-      uniqueDescriptions,
-      (cats ?? []).map((c: any) => ({ name: c.name, kind: c.kind })),
-      existingPayees.map((p: any) => p.merchant),
-      apiKey,
-    );
-
-    // Build description -> payee-name map
-    const descToPayee = new Map<string, { name: string; category: string; type: "expense" | "income" | "transfer" }>();
-    for (const c of clusters) {
-      for (const d of c.descriptions) {
-        descToPayee.set(d, { name: c.name, category: c.suggestedCategory, type: c.type });
-      }
-    }
-
-    const transactions = extracted.map((t) => {
-      const p = descToPayee.get(t.description);
-      const payee = p?.name ?? t.description.slice(0, 60);
-      const suggestedCategory = p?.category ?? "";
-      // Prefer deterministic type from row; fall back to AI cluster type
-      return {
-        date: t.date,
-        description: t.description,
-        amount: t.amount,
-        type: t.type,
-        suggestedCategory,
-        payee,
-      };
-    });
-
     return {
-      transactions,
-      payees: clusters,
+      transactions: extracted,
       categories: (cats ?? []) as Array<{ id: string; name: string; kind: string; parent_id: string | null }>,
       existingPayees: existingPayees as Array<{ id: string; merchant: string; category_id: string | null }>,
     };
   });
+
+const clusterInput = z.object({
+  descriptions: z.array(z.string()).min(1).max(20000),
+});
+
+/**
+ * Step 2: cluster unique descriptions into payees using AI.
+ */
+export const clusterStatementPayees = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => clusterInput.parse(d))
+  .handler(async ({ context, data }) => {
+    const householdId = await getHouseholdId(context);
+
+    const { data: cats } = await context.supabase
+      .from("categories")
+      .select("name, kind")
+      .eq("household_id", householdId);
+    const { data: existingPayeesRows } = await context.supabase
+      .from("memorized_payees")
+      .select("merchant")
+      .eq("household_id", householdId);
+
+    const apiKey = process.env.LOVABLE_API_KEY;
+    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+
+    const uniqueDescriptions = Array.from(new Set(data.descriptions));
+    const clusters = await clusterPayeesWithAI(
+      uniqueDescriptions,
+      (cats ?? []).map((c: any) => ({ name: c.name, kind: c.kind })),
+      (existingPayeesRows ?? []).map((p: any) => p.merchant),
+      apiKey,
+    );
+
+    return { payees: clusters };
+  });
+
 
 const bulkInput = z.object({
   accountId: z.string().uuid(),

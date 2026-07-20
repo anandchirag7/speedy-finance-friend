@@ -32,7 +32,8 @@ import {
 } from "@/components/ui/table";
 import { listAccounts } from "@/lib/finance.functions";
 import {
-  parseStatement,
+  extractStatementRows,
+  clusterStatementPayees,
   bulkInsertTransactions,
 } from "@/lib/statement-import.functions";
 
@@ -77,7 +78,8 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export function StatementImportDialog() {
-  const parseFn = useServerFn(parseStatement);
+  const extractFn = useServerFn(extractStatementRows);
+  const clusterFn = useServerFn(clusterStatementPayees);
   const saveFn = useServerFn(bulkInsertTransactions);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
@@ -98,6 +100,8 @@ export function StatementImportDialog() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [existingPayees, setExistingPayees] = useState<ExistingPayee[]>([]);
   const [clusters, setClusters] = useState<PayeeCluster[]>([]);
+  const [phase, setPhase] = useState<"idle" | "parsing" | "clustering">("idle");
+  const [phaseStats, setPhaseStats] = useState<{ rows: number; unique: number } | null>(null);
 
   const reset = () => {
     setStep("upload");
@@ -109,6 +113,8 @@ export function StatementImportDialog() {
     setCategories([]);
     setExistingPayees([]);
     setClusters([]);
+    setPhase("idle");
+    setPhaseStats(null);
   };
 
   const onUpload = async () => {
@@ -116,9 +122,13 @@ export function StatementImportDialog() {
     if (!bank) return toast.error("Choose a bank");
     if (!file) return toast.error("Choose a file");
     setParsing(true);
+    setPhase("parsing");
+    setPhaseStats(null);
     try {
       const base64 = await readFileAsBase64(file);
-      const result = await parseFn({
+
+      // ---- Phase 1: extraction (fast for CSV/Excel) ----
+      const extracted = await extractFn({
         data: {
           accountId,
           bank,
@@ -127,19 +137,36 @@ export function StatementImportDialog() {
           base64,
         },
       });
-      if (!result.transactions.length) {
+      if (!extracted.transactions.length) {
         toast.error("No transactions found in file");
+        setPhase("idle");
         return;
       }
-      setCategories(result.categories);
-      setExistingPayees(result.existingPayees);
-      setRawTxns(result.transactions);
+      setCategories(extracted.categories);
+      setExistingPayees(extracted.existingPayees);
 
-      const initialClusters: PayeeCluster[] = result.payees.map((p) => {
-        const match = result.categories.find(
+      const rawParsed: ParsedTxn[] = extracted.transactions.map((t) => ({
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        type: t.type,
+        suggestedCategory: "",
+        payee: t.description,
+      }));
+      setRawTxns(rawParsed);
+
+      const uniqueDescriptions = Array.from(new Set(rawParsed.map((t) => t.description)));
+      setPhaseStats({ rows: rawParsed.length, unique: uniqueDescriptions.length });
+
+      // ---- Phase 2: AI payee clustering ----
+      setPhase("clustering");
+      const { payees } = await clusterFn({ data: { descriptions: uniqueDescriptions } });
+
+      const initialClusters: PayeeCluster[] = payees.map((p) => {
+        const match = extracted.categories.find(
           (c) => c.name.toLowerCase() === (p.suggestedCategory ?? "").toLowerCase(),
         );
-        const existing = result.existingPayees.find(
+        const existing = extracted.existingPayees.find(
           (e) => e.merchant.toLowerCase() === p.name.toLowerCase(),
         );
         return {
@@ -148,17 +175,27 @@ export function StatementImportDialog() {
           descriptions: p.descriptions ?? [],
           category_id: existing?.category_id ?? match?.id ?? null,
           type: p.type,
-          saveAsPayee: !existing, // by default save new ones
+          saveAsPayee: !existing,
           isExisting: !!existing || !!p.isExisting,
         };
       });
+
+      // Attach cluster suggestions back to raw txns for later category defaults
+      const byDesc = new Map<string, { name: string; category: string }>();
+      for (const p of payees) for (const d of p.descriptions ?? []) byDesc.set(d, { name: p.name, category: p.suggestedCategory ?? "" });
+      setRawTxns(rawParsed.map((t) => {
+        const hit = byDesc.get(t.description);
+        return hit ? { ...t, payee: hit.name, suggestedCategory: hit.category } : t;
+      }));
+
       setClusters(initialClusters);
       setStep("payees");
-      toast.success(`AI clustered ${initialClusters.length} payees from ${result.transactions.length} transactions`);
+      toast.success(`Clustered ${initialClusters.length} payees from ${rawParsed.length} transactions`);
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to parse statement");
     } finally {
       setParsing(false);
+      setPhase("idle");
     }
   };
 
@@ -270,10 +307,26 @@ export function StatementImportDialog() {
               />
               {file && <p className="text-xs text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>}
             </div>
+            {phase !== "idle" && (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <PhaseRow
+                  active={phase === "parsing"}
+                  done={phase === "clustering"}
+                  label="Parsing statement"
+                  detail={phase === "clustering" && phaseStats ? `${phaseStats.rows} transactions found` : "Reading rows from the file…"}
+                />
+                <PhaseRow
+                  active={phase === "clustering"}
+                  done={false}
+                  label="Clustering payees with AI"
+                  detail={phase === "clustering" && phaseStats ? `Grouping ${phaseStats.unique} unique descriptions…` : "Waiting…"}
+                />
+              </div>
+            )}
             <DialogFooter>
               <Button onClick={onUpload} disabled={parsing}>
                 {parsing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {parsing ? "Parsing with AI…" : "Parse statement"}
+                {phase === "parsing" ? "Parsing…" : phase === "clustering" ? "Clustering with AI…" : "Parse statement"}
               </Button>
             </DialogFooter>
           </div>
@@ -424,6 +477,36 @@ export function StatementImportDialog() {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PhaseRow({
+  active,
+  done,
+  label,
+  detail,
+}: {
+  active: boolean;
+  done: boolean;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5">
+        {done ? (
+          <div className="h-4 w-4 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px]">✓</div>
+        ) : active ? (
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        ) : (
+          <div className="h-4 w-4 rounded-full border border-muted-foreground/40" />
+        )}
+      </div>
+      <div className="flex-1">
+        <div className={`text-sm font-medium ${active || done ? "" : "text-muted-foreground"}`}>{label}</div>
+        <div className="text-xs text-muted-foreground">{detail}</div>
+      </div>
+    </div>
   );
 }
 
