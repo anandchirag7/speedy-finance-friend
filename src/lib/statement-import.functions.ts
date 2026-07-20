@@ -223,6 +223,22 @@ function extractRowsFromAOA(aoa: any[][]): ExtractedTxn[] {
 
 // ---------- LLM: cluster unique descriptions into payees ----------
 
+/** Aggressively normalize a raw description so near-duplicates collapse before we call the LLM. */
+function normalizeDescForCluster(s: string): string {
+  return s
+    .toUpperCase()
+    // strip long digit runs (txn ids, card tails, ref numbers)
+    .replace(/\b\d{4,}\b/g, " ")
+    // strip dates
+    .replace(/\b\d{1,2}[\/\-][A-Z0-9]{2,}[\/\-]?\d{0,4}\b/g, " ")
+    // strip common noise tokens
+    .replace(/\b(UPI|NEFT|IMPS|RTGS|POS|ATM|TXN|REF|TRF|PAYMENT|PMT|PUR|DEBIT|CREDIT|INR|RS)\b/g, " ")
+    .replace(/[^A-Z0-9&@ ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
 async function clusterPayeesWithAI(
   descriptions: string[],
   categories: Array<{ name: string; kind: string }>,
@@ -231,9 +247,18 @@ async function clusterPayeesWithAI(
 ): Promise<Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>> {
   if (!descriptions.length) return [];
 
-  const CHUNK = 200;
+  // Pre-cluster by normalized form so we send far fewer strings to the LLM
+  const groupsByNorm = new Map<string, string[]>();
+  for (const d of descriptions) {
+    const key = normalizeDescForCluster(d) || d.toUpperCase().slice(0, 80);
+    if (!groupsByNorm.has(key)) groupsByNorm.set(key, []);
+    groupsByNorm.get(key)!.push(d);
+  }
+  const representatives = Array.from(groupsByNorm.keys());
+
+  const CHUNK = 120;
   const chunks: string[][] = [];
-  for (let i = 0; i < descriptions.length; i += CHUNK) chunks.push(descriptions.slice(i, i + CHUNK));
+  for (let i = 0; i < representatives.length; i += CHUNK) chunks.push(representatives.slice(i, i + CHUNK));
 
   const categoryList = categories.map((c) => c.name).join(", ");
   const payeeList = existingPayees.join(", ");
@@ -241,35 +266,30 @@ async function clusterPayeesWithAI(
   const merged = new Map<string, { name: string; descriptions: Set<string>; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>();
 
   const runChunk = async (chunk: string[]) => {
-    const systemPrompt = `You cluster raw bank statement descriptions into clean merchant/vendor names.
-Available categories: ${categoryList}
-Existing memorized payees (reuse EXACT spelling when a description matches one of these): ${payeeList || "(none)"}
+    const systemPrompt = `You cluster normalized bank descriptions into clean merchant/vendor names.
+Categories: ${categoryList}
+Existing payees (reuse EXACT spelling when matched): ${payeeList || "(none)"}
 
-Return ONLY valid JSON:
-{ "payees": [ { "name": "Amazon", "descriptions": ["AMZN Mktp IN*A12", "AMAZON PAY INDIA"], "suggestedCategory": "Shopping", "type": "expense", "isExisting": false } ] }
+Return ONLY JSON: { "payees": [ { "name": "Amazon", "descriptions": ["AMZN MKTP", "AMAZON PAY"], "suggestedCategory": "Shopping", "type": "expense", "isExisting": false } ] }
 
-Rules:
-- Cluster descriptions of the SAME real-world merchant into ONE payee.
-- Use short, clean, human-readable payee names (title case). Strip transaction ids, city codes, POS numbers, dates.
-- Every input description must appear in exactly one payee's descriptions[] array — do not drop any.
-- type: expense (money out), income (money in), transfer (between own accounts).
-- Match existing memorized payees exactly (case & spelling) and set isExisting=true when applicable.`;
+- Cluster same merchant into ONE payee. Short clean title-case names.
+- Every input MUST appear in exactly one payee's descriptions[].
+- type: expense/income/transfer.`;
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-flash-lite",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Cluster these ${chunk.length} descriptions:\n${chunk.map((d, i) => `${i + 1}. ${d}`).join("\n")}` },
+          { role: "user", content: `Cluster:\n${chunk.map((d, i) => `${i + 1}. ${d}`).join("\n")}` },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 16000,
+        max_tokens: 8000,
       }),
     });
     if (!res.ok) {
-      // fall through: treat each description as its own payee
       return chunk.map((d) => ({ name: d.slice(0, 60), descriptions: [d], suggestedCategory: "", type: "expense" as const, isExisting: false }));
     }
     const j = await res.json();
@@ -281,14 +301,9 @@ Rules:
     return arr as Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>;
   };
 
-  // Run chunks with limited concurrency (3)
-  const results: Array<Awaited<ReturnType<typeof runChunk>>> = [];
-  const CONC = 3;
-  for (let i = 0; i < chunks.length; i += CONC) {
-    const batch = chunks.slice(i, i + CONC);
-    const r = await Promise.all(batch.map(runChunk));
-    results.push(...r);
-  }
+  // Run all chunks in parallel — small (≤~10) and gateway handles it
+  const results = await Promise.all(chunks.map(runChunk));
+
 
   for (const clusters of results) {
     for (const c of clusters) {
