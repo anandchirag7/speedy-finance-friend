@@ -78,7 +78,8 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export function StatementImportDialog() {
-  const parseFn = useServerFn(parseStatement);
+  const extractFn = useServerFn(extractStatementRows);
+  const clusterFn = useServerFn(clusterStatementPayees);
   const saveFn = useServerFn(bulkInsertTransactions);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
