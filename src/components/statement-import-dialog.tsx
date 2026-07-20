@@ -307,10 +307,26 @@ export function StatementImportDialog() {
               />
               {file && <p className="text-xs text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>}
             </div>
+            {phase !== "idle" && (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <PhaseRow
+                  active={phase === "parsing"}
+                  done={phase === "clustering"}
+                  label="Parsing statement"
+                  detail={phase === "clustering" && phaseStats ? `${phaseStats.rows} transactions found` : "Reading rows from the file…"}
+                />
+                <PhaseRow
+                  active={phase === "clustering"}
+                  done={false}
+                  label="Clustering payees with AI"
+                  detail={phase === "clustering" && phaseStats ? `Grouping ${phaseStats.unique} unique descriptions…` : "Waiting…"}
+                />
+              </div>
+            )}
             <DialogFooter>
               <Button onClick={onUpload} disabled={parsing}>
                 {parsing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {parsing ? "Parsing with AI…" : "Parse statement"}
+                {phase === "parsing" ? "Parsing…" : phase === "clustering" ? "Clustering with AI…" : "Parse statement"}
               </Button>
             </DialogFooter>
           </div>
