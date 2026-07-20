@@ -525,7 +525,13 @@ function PayeesStep({
   onContinue: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<number, boolean>>(() => {
+    // auto-expand any cluster with more than 2 matched descriptions so
+    // users immediately see hidden rows and can move/split them.
+    const init: Record<number, boolean> = {};
+    clusters.forEach((c, i) => { if (c.descriptions.length > 2) init[i] = true; });
+    return init;
+  });
   const [filter, setFilter] = useState<"all" | "new" | "existing">("all");
   // per-cluster selected descriptions (by description string)
   const [selected, setSelected] = useState<Record<number, Set<string>>>({});
@@ -635,6 +641,28 @@ function PayeesStep({
               </button>
             ))}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              const all: Record<number, boolean> = {};
+              clusters.forEach((_, i) => { all[i] = true; });
+              setExpanded(all);
+            }}
+          >
+            Expand all
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setExpanded({})}
+          >
+            Collapse all
+          </Button>
         </div>
       </div>
 
@@ -751,7 +779,14 @@ function PayeesStep({
                     Matched descriptions ({c.descriptions.length})
                     {isOpen && <span className="ml-2 text-[10px] font-normal text-muted-foreground/80">select rows to move or split</span>}
                   </span>
-                  {!isOpen && remaining > 0 && <span className="text-[10px]">+{remaining} more</span>}
+                  {!isOpen && remaining > 0 && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      Show {remaining} more
+                    </span>
+                  )}
+                  {isOpen && c.descriptions.length > 2 && (
+                    <span className="text-[10px] text-muted-foreground/80">click to collapse</span>
+                  )}
                 </button>
 
                 {isOpen && sel.size > 0 && (
