@@ -480,6 +480,36 @@ export function StatementImportDialog() {
   );
 }
 
+function PhaseRow({
+  active,
+  done,
+  label,
+  detail,
+}: {
+  active: boolean;
+  done: boolean;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5">
+        {done ? (
+          <div className="h-4 w-4 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px]">✓</div>
+        ) : active ? (
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        ) : (
+          <div className="h-4 w-4 rounded-full border border-muted-foreground/40" />
+        )}
+      </div>
+      <div className="flex-1">
+        <div className={`text-sm font-medium ${active || done ? "" : "text-muted-foreground"}`}>{label}</div>
+        <div className="text-xs text-muted-foreground">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
 function PayeesStep({
   clusters,
   setClusters,
