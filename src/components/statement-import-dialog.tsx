@@ -280,100 +280,13 @@ export function StatementImportDialog() {
         )}
 
         {step === "payees" && (
-          <>
-            <p className="text-sm text-muted-foreground -mt-2">
-              AI grouped similar statement descriptions into vendors. Rename any payee, pick a category, and decide which ones to save to your Memorized Payees. These names will be applied to all matching transactions.
-            </p>
-            <div className="flex-1 overflow-auto rounded-md border">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead className="w-64">Payee name</TableHead>
-                    <TableHead>Matched descriptions</TableHead>
-                    <TableHead className="w-44">Category</TableHead>
-                    <TableHead className="w-24 text-center">Save payee</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {clusters.map((c, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="align-top">
-                        <Input
-                          value={c.name}
-                          onChange={(e) => {
-                            const copy = [...clusters];
-                            copy[i] = { ...c, name: e.target.value };
-                            setClusters(copy);
-                          }}
-                          className="h-8 font-medium"
-                        />
-                        <div className="mt-1 flex items-center gap-1">
-                          {c.isExisting ? (
-                            <Badge variant="secondary" className="text-[10px]">Existing payee</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px]">New</Badge>
-                          )}
-                          <Badge variant="outline" className="text-[10px] gap-1">
-                            <Users className="h-2.5 w-2.5" />
-                            {c.descriptions.length}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <div className="max-h-24 overflow-auto text-xs text-muted-foreground space-y-0.5">
-                          {c.descriptions.slice(0, 8).map((d, di) => (
-                            <div key={di} className="truncate">• {d}</div>
-                          ))}
-                          {c.descriptions.length > 8 && (
-                            <div className="text-[10px]">+{c.descriptions.length - 8} more</div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Select
-                          value={c.category_id ?? "none"}
-                          onValueChange={(v) => {
-                            const copy = [...clusters];
-                            copy[i] = { ...c, category_id: v === "none" ? null : v };
-                            setClusters(copy);
-                          }}
-                        >
-                          <SelectTrigger className="h-8"><SelectValue placeholder="Uncategorized" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Uncategorized</SelectItem>
-                            {categories
-                              .filter((cat) => cat.kind === c.type || c.type === "transfer")
-                              .map((cat) => (
-                                <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-center align-top">
-                        <input
-                          type="checkbox"
-                          checked={c.saveAsPayee}
-                          disabled={c.isExisting}
-                          onChange={(e) => {
-                            const copy = [...clusters];
-                            copy[i] = { ...c, saveAsPayee: e.target.checked };
-                            setClusters(copy);
-                          }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <DialogFooter className="mt-2">
-              <div className="mr-auto text-sm text-muted-foreground">
-                {clusters.length} payees · {clusters.filter((c) => c.saveAsPayee && !c.isExisting).length} will be saved as new
-              </div>
-              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
-              <Button onClick={onConfirmPayees}>Continue to transactions</Button>
-            </DialogFooter>
-          </>
+          <PayeesStep
+            clusters={clusters}
+            setClusters={setClusters}
+            categories={categories}
+            onBack={() => setStep("upload")}
+            onContinue={onConfirmPayees}
+          />
         )}
 
         {step === "mapping" && (
