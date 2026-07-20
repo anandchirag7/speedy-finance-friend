@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Upload, Loader2, Trash2, Sparkles, Users } from "lucide-react";
+import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -280,100 +280,13 @@ export function StatementImportDialog() {
         )}
 
         {step === "payees" && (
-          <>
-            <p className="text-sm text-muted-foreground -mt-2">
-              AI grouped similar statement descriptions into vendors. Rename any payee, pick a category, and decide which ones to save to your Memorized Payees. These names will be applied to all matching transactions.
-            </p>
-            <div className="flex-1 overflow-auto rounded-md border">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead className="w-64">Payee name</TableHead>
-                    <TableHead>Matched descriptions</TableHead>
-                    <TableHead className="w-44">Category</TableHead>
-                    <TableHead className="w-24 text-center">Save payee</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {clusters.map((c, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="align-top">
-                        <Input
-                          value={c.name}
-                          onChange={(e) => {
-                            const copy = [...clusters];
-                            copy[i] = { ...c, name: e.target.value };
-                            setClusters(copy);
-                          }}
-                          className="h-8 font-medium"
-                        />
-                        <div className="mt-1 flex items-center gap-1">
-                          {c.isExisting ? (
-                            <Badge variant="secondary" className="text-[10px]">Existing payee</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px]">New</Badge>
-                          )}
-                          <Badge variant="outline" className="text-[10px] gap-1">
-                            <Users className="h-2.5 w-2.5" />
-                            {c.descriptions.length}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <div className="max-h-24 overflow-auto text-xs text-muted-foreground space-y-0.5">
-                          {c.descriptions.slice(0, 8).map((d, di) => (
-                            <div key={di} className="truncate">• {d}</div>
-                          ))}
-                          {c.descriptions.length > 8 && (
-                            <div className="text-[10px]">+{c.descriptions.length - 8} more</div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Select
-                          value={c.category_id ?? "none"}
-                          onValueChange={(v) => {
-                            const copy = [...clusters];
-                            copy[i] = { ...c, category_id: v === "none" ? null : v };
-                            setClusters(copy);
-                          }}
-                        >
-                          <SelectTrigger className="h-8"><SelectValue placeholder="Uncategorized" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Uncategorized</SelectItem>
-                            {categories
-                              .filter((cat) => cat.kind === c.type || c.type === "transfer")
-                              .map((cat) => (
-                                <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-center align-top">
-                        <input
-                          type="checkbox"
-                          checked={c.saveAsPayee}
-                          disabled={c.isExisting}
-                          onChange={(e) => {
-                            const copy = [...clusters];
-                            copy[i] = { ...c, saveAsPayee: e.target.checked };
-                            setClusters(copy);
-                          }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <DialogFooter className="mt-2">
-              <div className="mr-auto text-sm text-muted-foreground">
-                {clusters.length} payees · {clusters.filter((c) => c.saveAsPayee && !c.isExisting).length} will be saved as new
-              </div>
-              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
-              <Button onClick={onConfirmPayees}>Continue to transactions</Button>
-            </DialogFooter>
-          </>
+          <PayeesStep
+            clusters={clusters}
+            setClusters={setClusters}
+            categories={categories}
+            onBack={() => setStep("upload")}
+            onContinue={onConfirmPayees}
+          />
         )}
 
         {step === "mapping" && (
@@ -511,5 +424,189 @@ export function StatementImportDialog() {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PayeesStep({
+  clusters,
+  setClusters,
+  categories,
+  onBack,
+  onContinue,
+}: {
+  clusters: PayeeCluster[];
+  setClusters: (c: PayeeCluster[]) => void;
+  categories: Category[];
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [filter, setFilter] = useState<"all" | "new" | "existing">("all");
+
+  const update = (i: number, patch: Partial<PayeeCluster>) => {
+    const copy = [...clusters];
+    copy[i] = { ...copy[i], ...patch };
+    setClusters(copy);
+  };
+
+  const q = query.trim().toLowerCase();
+  const visible = clusters
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => {
+      if (filter === "new" && c.isExisting) return false;
+      if (filter === "existing" && !c.isExisting) return false;
+      if (!q) return true;
+      return (
+        c.name.toLowerCase().includes(q) ||
+        c.descriptions.some((d) => d.toLowerCase().includes(q))
+      );
+    });
+
+  const newCount = clusters.filter((c) => !c.isExisting).length;
+  const savingCount = clusters.filter((c) => c.saveAsPayee && !c.isExisting).length;
+
+  return (
+    <>
+      <div className="-mt-2 space-y-3">
+        <p className="text-sm text-muted-foreground">
+          AI grouped similar statement descriptions into vendors. Review the suggested payee name, rename if needed, and pick a category before importing transactions.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search payee or description…"
+              className="h-8 pl-8"
+            />
+          </div>
+          <div className="flex rounded-md border bg-muted/40 p-0.5 text-xs">
+            {(["all", "new", "existing"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setFilter(k)}
+                className={`rounded px-2.5 py-1 capitalize transition ${
+                  filter === k ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {k}
+                {k === "new" && ` (${newCount})`}
+                {k === "all" && ` (${clusters.length})`}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto rounded-md border bg-muted/20 divide-y">
+        {visible.length === 0 && (
+          <div className="p-8 text-center text-sm text-muted-foreground">No payees match your search.</div>
+        )}
+        {visible.map(({ c, i }) => {
+          const isOpen = !!expanded[i];
+          const preview = c.descriptions.slice(0, 2);
+          const remaining = c.descriptions.length - preview.length;
+          return (
+            <div key={i} className="bg-background p-3 sm:p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                {/* Payee name — hero field */}
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Payee name
+                    </Label>
+                    <Sparkles className="h-3 w-3 text-primary/70" />
+                    <span className="text-[10px] text-muted-foreground">AI suggested</span>
+                  </div>
+                  <Input
+                    value={c.name}
+                    onChange={(e) => update(i, { name: e.target.value })}
+                    placeholder="Enter a clear payee name"
+                    className="h-10 text-base font-semibold"
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    {c.isExisting ? (
+                      <Badge variant="secondary" className="text-[10px]">Existing payee</Badge>
+                    ) : (
+                      <Badge className="text-[10px]">New</Badge>
+                    )}
+                    <Badge variant="outline" className="gap-1 text-[10px]">
+                      <Users className="h-2.5 w-2.5" />
+                      {c.descriptions.length} txn{c.descriptions.length === 1 ? "" : "s"}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] capitalize">{c.type}</Badge>
+                  </div>
+                </div>
+
+                {/* Category + Save toggle */}
+                <div className="flex flex-col gap-2 lg:w-72 lg:shrink-0">
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Category
+                    </Label>
+                    <Select
+                      value={c.category_id ?? "none"}
+                      onValueChange={(v) => update(i, { category_id: v === "none" ? null : v })}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Uncategorized" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Uncategorized</SelectItem>
+                        {categories
+                          .filter((cat) => cat.kind === c.type || c.type === "transfer")
+                          .map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={c.saveAsPayee}
+                      disabled={c.isExisting}
+                      onChange={(e) => update(i, { saveAsPayee: e.target.checked })}
+                    />
+                    <span className={c.isExisting ? "text-muted-foreground" : ""}>
+                      {c.isExisting ? "Already in Memorized Payees" : "Save to Memorized Payees"}
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Matched descriptions */}
+              <div className="mt-3 rounded-md border bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setExpanded({ ...expanded, [i]: !isOpen })}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <span className="flex items-center gap-1.5">
+                    {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    Matched descriptions ({c.descriptions.length})
+                  </span>
+                  {!isOpen && remaining > 0 && <span className="text-[10px]">+{remaining} more</span>}
+                </button>
+                <div className="px-3 pb-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                  {(isOpen ? c.descriptions : preview).map((d, di) => (
+                    <div key={di} className="break-all">• {d}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <DialogFooter className="mt-2">
+        <div className="mr-auto text-sm text-muted-foreground">
+          {clusters.length} payees · {savingCount} will be saved as new
+        </div>
+        <Button variant="outline" onClick={onBack}>Back</Button>
+        <Button onClick={onContinue}>Continue to transactions</Button>
+      </DialogFooter>
+    </>
   );
 }
