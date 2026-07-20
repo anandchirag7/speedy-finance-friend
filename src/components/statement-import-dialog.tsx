@@ -779,7 +779,14 @@ function PayeesStep({
                     Matched descriptions ({c.descriptions.length})
                     {isOpen && <span className="ml-2 text-[10px] font-normal text-muted-foreground/80">select rows to move or split</span>}
                   </span>
-                  {!isOpen && remaining > 0 && <span className="text-[10px]">+{remaining} more</span>}
+                  {!isOpen && remaining > 0 && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      Show {remaining} more
+                    </span>
+                  )}
+                  {isOpen && c.descriptions.length > 2 && (
+                    <span className="text-[10px] text-muted-foreground/80">click to collapse</span>
+                  )}
                 </button>
 
                 {isOpen && sel.size > 0 && (
