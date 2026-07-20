@@ -200,10 +200,11 @@ export function StatementImportDialog() {
   };
 
   const onConfirmPayees = () => {
-    // Map each txn to its cluster's final name & category
-    const byOriginal = new Map(clusters.map((c) => [c.originalName, c]));
+    // Map each txn to its cluster by description (handles moves between clusters)
+    const byDesc = new Map<string, PayeeCluster>();
+    for (const c of clusters) for (const d of c.descriptions) byDesc.set(d, c);
     const mapped = rawTxns.map((t) => {
-      const cluster = byOriginal.get(t.payee);
+      const cluster = byDesc.get(t.description);
       const merchant = cluster?.name ?? t.payee ?? "";
       const category_id = cluster?.category_id ?? null;
       return { ...t, merchant, category_id, include: true };
