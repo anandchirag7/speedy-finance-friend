@@ -641,6 +641,28 @@ function PayeesStep({
               </button>
             ))}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => {
+              const all: Record<number, boolean> = {};
+              clusters.forEach((_, i) => { all[i] = true; });
+              setExpanded(all);
+            }}
+          >
+            Expand all
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setExpanded({})}
+          >
+            Collapse all
+          </Button>
         </div>
       </div>
 
