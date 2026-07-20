@@ -158,9 +158,14 @@ export function StatementImportDialog() {
       const uniqueDescriptions = Array.from(new Set(rawParsed.map((t) => t.description)));
       setPhaseStats({ rows: rawParsed.length, unique: uniqueDescriptions.length });
 
-      // ---- Phase 2: AI payee clustering ----
+      // ---- Phase 2: smart payee clustering ----
       setPhase("clustering");
-      const { payees } = await clusterFn({ data: { descriptions: uniqueDescriptions } });
+      const { payees } = await clusterFn({
+        data: {
+          descriptions: uniqueDescriptions,
+          transactions: rawParsed.map((t) => ({ description: t.description, type: t.type })),
+        },
+      });
 
       const initialClusters: PayeeCluster[] = payees.map((p) => {
         const match = extracted.categories.find(
@@ -270,7 +275,7 @@ export function StatementImportDialog() {
             {step === "payees" && (
               <span className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                Confirm payees clustered by AI
+                Confirm payee clusters
               </span>
             )}
             {step === "mapping" && "Review & save transactions"}
@@ -319,15 +324,15 @@ export function StatementImportDialog() {
                 <PhaseRow
                   active={phase === "clustering"}
                   done={false}
-                  label="Clustering payees with AI"
-                  detail={phase === "clustering" && phaseStats ? `Grouping ${phaseStats.unique} unique descriptions…` : "Waiting…"}
+                  label="Smart-clustering payees"
+                  detail={phase === "clustering" && phaseStats ? `Grouping ${phaseStats.unique} unique descriptions locally…` : "Waiting…"}
                 />
               </div>
             )}
             <DialogFooter>
               <Button onClick={onUpload} disabled={parsing}>
                 {parsing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {phase === "parsing" ? "Parsing…" : phase === "clustering" ? "Clustering with AI…" : "Parse statement"}
+                {phase === "parsing" ? "Parsing…" : phase === "clustering" ? "Clustering…" : "Parse statement"}
               </Button>
             </DialogFooter>
           </div>
@@ -613,7 +618,7 @@ function PayeesStep({
     <>
       <div className="-mt-2 space-y-3">
         <p className="text-sm text-muted-foreground">
-          AI grouped similar statement descriptions into vendors. Rename, recategorize, or fix mistakes — expand a payee to move individual transactions to another payee or split them out into a new one.
+          Similar statement descriptions were grouped into vendors. Rename, recategorize, or fix mistakes — expand a payee to move individual transactions to another payee or split them out into a new one.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">

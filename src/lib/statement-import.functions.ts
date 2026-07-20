@@ -221,7 +221,7 @@ function extractRowsFromAOA(aoa: any[][]): ExtractedTxn[] {
   return out;
 }
 
-// ---------- LLM: cluster unique descriptions into payees ----------
+// ---------- Fast local payee clustering ----------
 
 /** Aggressively normalize a raw description so near-duplicates collapse before we call the LLM. */
 function normalizeDescForCluster(s: string): string {
@@ -239,122 +239,149 @@ function normalizeDescForCluster(s: string): string {
     .slice(0, 80);
 }
 
-async function clusterPayeesWithAI(
+const PAYMENT_NOISE = new Set([
+  "UPI", "NEFT", "IMPS", "RTGS", "POS", "ATM", "TXN", "REF", "TRF", "PAYMENT", "PMT", "PUR", "DEBIT", "CREDIT",
+  "INR", "RS", "DR", "CR", "ACH", "NACH", "ECS", "BIL", "BILL", "ONLINE", "BANK", "TRANSFER", "WDL", "WITHDRAWAL",
+  "CARD", "VISA", "MASTERCARD", "RUPAY", "PAYTM", "PHONEPE", "GPAY", "GOOGLE", "BHIM", "PAY", "PVT", "LTD", "LIMITED",
+  "PRIVATE", "INDIA", "IND", "MUMBAI", "BANGALORE", "BENGALURU", "DELHI", "CHENNAI", "HYDERABAD", "PUNE", "KOLKATA",
+]);
+
+const CATEGORY_HINTS: Array<{ words: string[]; categories: string[]; type?: "expense" | "income" | "transfer" }> = [
+  { words: ["SALARY", "PAYROLL", "WAGES", "BONUS"], categories: ["Salary", "Income"], type: "income" },
+  { words: ["INTEREST", "DIVIDEND", "CASHBACK", "REFUND"], categories: ["Income", "Interest", "Refund"], type: "income" },
+  { words: ["SWIGGY", "ZOMATO", "DOMINOS", "MCDONALD", "STARBUCKS", "RESTAURANT", "CAFE"], categories: ["Food", "Dining", "Restaurants"] },
+  { words: ["UBER", "OLA", "RAPIDO", "METRO", "FUEL", "PETROL", "DIESEL", "PARKING"], categories: ["Transport", "Travel", "Fuel"] },
+  { words: ["AMAZON", "FLIPKART", "MYNTRA", "AJIO", "NYKAA", "SHOP"], categories: ["Shopping"] },
+  { words: ["NETFLIX", "SPOTIFY", "HOTSTAR", "PRIME", "BOOKMYSHOW", "YOUTUBE"], categories: ["Entertainment", "Subscriptions"] },
+  { words: ["AIRTEL", "JIO", "VI ", "VODAFONE", "MOBILE", "BROADBAND", "WIFI"], categories: ["Bills", "Utilities", "Phone"] },
+  { words: ["ELECTRICITY", "WATER", "GAS", "BESCOM", "TATA POWER"], categories: ["Utilities", "Bills"] },
+  { words: ["RENT", "MAINTENANCE", "SOCIETY"], categories: ["Rent", "Housing"] },
+  { words: ["EMI", "LOAN", "CREDIT CARD", "CC PAYMENT"], categories: ["Loan", "Debt", "Credit Card"], type: "transfer" },
+  { words: ["HOSPITAL", "PHARMACY", "MEDICAL", "APOLLO", "PRACTO"], categories: ["Health", "Medical"] },
+  { words: ["SCHOOL", "COLLEGE", "TUITION", "COURSE", "UDEMY"], categories: ["Education"] },
+];
+
+function comparable(s: string): string {
+  return s.toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function payeeKey(s: string): string {
+  return comparable(s).replace(/\b(PVT|LTD|LIMITED|PRIVATE|INDIA|ONLINE|PAYMENTS?|BANK)\b/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\b\w/g, (m) => m.toUpperCase())
+    .replace(/\b(Upi|Imps|Neft|Rtgs|Atm|Emi|Hdfc|Icici|Sbi|Idfc|Pvt|Ltd)\b/g, (m) => m.toUpperCase());
+}
+
+function tokens(s: string): string[] {
+  return comparable(s)
+    .split(" ")
+    .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !PAYMENT_NOISE.has(t));
+}
+
+function findExistingPayee(desc: string, existing: Array<{ name: string; key: string; tokens: string[] }>): string | null {
+  const descKey = payeeKey(desc);
+  const descTokens = new Set(tokens(desc));
+  let best: { name: string; score: number } | null = null;
+  for (const p of existing) {
+    if (!p.key) continue;
+    if (descKey.includes(p.key) || p.key.includes(descKey)) return p.name;
+    const overlap = p.tokens.filter((t) => descTokens.has(t)).length;
+    const score = overlap / Math.max(1, p.tokens.length);
+    if (overlap > 0 && score > (best?.score ?? 0)) best = { name: p.name, score };
+  }
+  return best && best.score >= 0.67 ? best.name : null;
+}
+
+function cleanPayeeName(desc: string): string {
+  const withHandlesExpanded = comparable(desc).replace(/\b([A-Z0-9._-]{3,})@[A-Z0-9._-]+\b/g, " $1 ");
+  const segments = withHandlesExpanded
+    .split(/[\/|*:_\-]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let best = "";
+  let bestScore = -1;
+  for (const segment of segments.length ? segments : [withHandlesExpanded]) {
+    const ts = tokens(segment);
+    if (!ts.length) continue;
+    const alpha = ts.filter((t) => /[A-Z]/.test(t)).length;
+    const score = alpha * 3 + Math.min(ts.join(" ").length, 24) - (segment.match(/\d/g)?.length ?? 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = ts.slice(0, 4).join(" ");
+    }
+  }
+
+  if (!best) best = tokens(normalizeDescForCluster(desc)).slice(0, 4).join(" ");
+  return titleCase(best || desc.slice(0, 60)).slice(0, 80);
+}
+
+function guessCategory(name: string, descriptions: string[], categories: Array<{ name: string; kind: string }>): string {
+  const haystack = comparable(`${name} ${descriptions.join(" ")}`);
+  const categoryNames = categories.map((c) => c.name);
+  for (const hint of CATEGORY_HINTS) {
+    if (!hint.words.some((w) => haystack.includes(w))) continue;
+    const match = categoryNames.find((cat) => hint.categories.some((target) => cat.toLowerCase().includes(target.toLowerCase())));
+    if (match) return match;
+  }
+  return "";
+}
+
+function inferType(descriptions: string[], typeByDesc: Map<string, "expense" | "income" | "transfer">): "expense" | "income" | "transfer" {
+  const counts = { expense: 0, income: 0, transfer: 0 };
+  for (const d of descriptions) counts[typeByDesc.get(d) ?? "expense"]++;
+  if (counts.income > counts.expense && counts.income >= counts.transfer) return "income";
+  if (counts.transfer > counts.expense && counts.transfer >= counts.income) return "transfer";
+  const haystack = comparable(descriptions.join(" "));
+  const hinted = CATEGORY_HINTS.find((h) => h.type && h.words.some((w) => haystack.includes(w)))?.type;
+  return hinted ?? "expense";
+}
+
+function clusterPayeesFast(
   descriptions: string[],
   categories: Array<{ name: string; kind: string }>,
   existingPayees: string[],
-  apiKey: string,
+  typeByDesc = new Map<string, "expense" | "income" | "transfer">(),
 ): Promise<Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>> {
-  if (!descriptions.length) return [];
+  if (!descriptions.length) return Promise.resolve([]);
 
-  // Pre-cluster by normalized form so we send far fewer strings to the LLM
-  const groupsByNorm = new Map<string, string[]>();
+  const existingIndex = existingPayees.map((name) => ({ name, key: payeeKey(name), tokens: tokens(name) }));
+  const groups = new Map<string, { name: string; descriptions: Set<string>; isExisting: boolean }>();
+
   for (const d of descriptions) {
-    const key = normalizeDescForCluster(d) || d.toUpperCase().slice(0, 80);
-    if (!groupsByNorm.has(key)) groupsByNorm.set(key, []);
-    groupsByNorm.get(key)!.push(d);
-  }
-  const representatives = Array.from(groupsByNorm.keys());
-
-  const CHUNK = 120;
-  const chunks: string[][] = [];
-  for (let i = 0; i < representatives.length; i += CHUNK) chunks.push(representatives.slice(i, i + CHUNK));
-
-  const categoryList = categories.map((c) => c.name).join(", ");
-  const payeeList = existingPayees.join(", ");
-
-  const merged = new Map<string, { name: string; descriptions: Set<string>; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>();
-
-  const runChunk = async (chunk: string[]) => {
-    const systemPrompt = `You cluster normalized bank descriptions into clean merchant/vendor names.
-Categories: ${categoryList}
-Existing payees (reuse EXACT spelling when matched): ${payeeList || "(none)"}
-
-Return ONLY JSON: { "payees": [ { "name": "Amazon", "descriptions": ["AMZN MKTP", "AMAZON PAY"], "suggestedCategory": "Shopping", "type": "expense", "isExisting": false } ] }
-
-- Cluster same merchant into ONE payee. Short clean title-case names.
-- Every input MUST appear in exactly one payee's descriptions[].
-- type: expense/income/transfer.`;
-
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Cluster:\n${chunk.map((d, i) => `${i + 1}. ${d}`).join("\n")}` },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 8000,
-      }),
-    });
-    if (!res.ok) {
-      return chunk.map((d) => ({ name: d.slice(0, 60), descriptions: [d], suggestedCategory: "", type: "expense" as const, isExisting: false }));
-    }
-    const j = await res.json();
-    const content: string = j.choices?.[0]?.message?.content ?? "{}";
-    let parsed: any;
-    try { parsed = JSON.parse(content); } catch { parsed = salvageJson(content) ?? {}; }
-    const arr = Array.isArray(parsed?.payees) ? parsed.payees : [];
-    if (!arr.length) return chunk.map((d) => ({ name: d.slice(0, 60), descriptions: [d], suggestedCategory: "", type: "expense" as const, isExisting: false }));
-    return arr as Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>;
-  };
-
-  // Run all chunks in parallel — small (≤~10) and gateway handles it
-  const results = await Promise.all(chunks.map(runChunk));
-
-
-  for (const clusters of results) {
-    for (const c of clusters) {
-      const key = (c.name || "").trim().toLowerCase();
-      if (!key) continue;
-      // Expand each normalized rep back to the raw descriptions it grouped
-      const expanded: string[] = [];
-      for (const rep of c.descriptions ?? []) {
-        const raws = groupsByNorm.get(rep);
-        if (raws) expanded.push(...raws);
-        else expanded.push(rep);
+    const existing = findExistingPayee(d, existingIndex);
+    const name = existing ?? cleanPayeeName(d);
+    const key = payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
+    const current = groups.get(key);
+    if (current) {
+      current.descriptions.add(d);
+      if (existing && !current.isExisting) {
+        current.name = existing;
+        current.isExisting = true;
       }
-      const existing = merged.get(key);
-      if (existing) {
-        for (const d of expanded) existing.descriptions.add(d);
-      } else {
-        merged.set(key, {
-          name: c.name.trim(),
-          descriptions: new Set(expanded),
-          suggestedCategory: c.suggestedCategory ?? "",
-          type: (c.type as any) ?? "expense",
-          isExisting: !!c.isExisting,
-        });
-      }
-    }
-  }
-
-  // Ensure every input description is present somewhere; add stragglers as their own payee
-  const covered = new Set<string>();
-  for (const v of merged.values()) for (const d of v.descriptions) covered.add(d);
-  for (const d of descriptions) {
-    if (!covered.has(d)) {
-      const key = d.toLowerCase();
-      merged.set(key, {
-        name: d.slice(0, 60),
+    } else {
+      groups.set(key, {
+        name,
         descriptions: new Set([d]),
-        suggestedCategory: "",
-        type: "expense",
-        isExisting: false,
+        isExisting: !!existing,
       });
     }
   }
 
-
-  return Array.from(merged.values()).map((v) => ({
+  return Promise.resolve(Array.from(groups.values()).map((v) => {
+    const descs = Array.from(v.descriptions);
+    return {
     name: v.name,
-    descriptions: Array.from(v.descriptions),
-    suggestedCategory: v.suggestedCategory,
-    type: v.type,
+      descriptions: descs,
+      suggestedCategory: guessCategory(v.name, descs, categories),
+      type: inferType(descs, typeByDesc),
     isExisting: v.isExisting,
-  }));
+    };
+  }).sort((a, b) => b.descriptions.length - a.descriptions.length || a.name.localeCompare(b.name)));
 }
 
 // ---------- PDF: still needs AI for extraction ----------
@@ -500,11 +527,15 @@ export const extractStatementRows = createServerFn({ method: "POST" })
   });
 
 const clusterInput = z.object({
-  descriptions: z.array(z.string()).min(1).max(20000),
+  descriptions: z.array(z.string()).min(1).max(20000).default([]),
+  transactions: z.array(z.object({
+    description: z.string(),
+    type: z.enum(["income", "expense", "transfer"]).optional(),
+  })).optional(),
 });
 
 /**
- * Step 2: cluster unique descriptions into payees using AI.
+ * Step 2: cluster unique descriptions into payees locally.
  */
 export const clusterStatementPayees = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -521,15 +552,19 @@ export const clusterStatementPayees = createServerFn({ method: "POST" })
       .select("merchant")
       .eq("household_id", householdId);
 
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
-
-    const uniqueDescriptions = Array.from(new Set(data.descriptions));
-    const clusters = await clusterPayeesWithAI(
+    const sourceDescriptions = data.transactions?.length
+      ? data.transactions.map((t) => t.description)
+      : data.descriptions;
+    const uniqueDescriptions = Array.from(new Set(sourceDescriptions));
+    const typeByDesc = new Map<string, "expense" | "income" | "transfer">();
+    for (const txn of data.transactions ?? []) {
+      if (txn.type) typeByDesc.set(txn.description, txn.type);
+    }
+    const clusters = await clusterPayeesFast(
       uniqueDescriptions,
       (cats ?? []).map((c: any) => ({ name: c.name, kind: c.kind })),
       (existingPayeesRows ?? []).map((p: any) => p.merchant),
-      apiKey,
+      typeByDesc,
     );
 
     return { payees: clusters };
