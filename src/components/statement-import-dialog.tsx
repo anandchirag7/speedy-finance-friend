@@ -32,7 +32,8 @@ import {
 } from "@/components/ui/table";
 import { listAccounts } from "@/lib/finance.functions";
 import {
-  parseStatement,
+  extractStatementRows,
+  clusterStatementPayees,
   bulkInsertTransactions,
 } from "@/lib/statement-import.functions";
 
