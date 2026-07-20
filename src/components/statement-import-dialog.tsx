@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search, Split, GitMerge, ArrowRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
