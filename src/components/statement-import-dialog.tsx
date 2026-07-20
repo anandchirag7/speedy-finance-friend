@@ -525,7 +525,13 @@ function PayeesStep({
   onContinue: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<number, boolean>>(() => {
+    // auto-expand any cluster with more than 2 matched descriptions so
+    // users immediately see hidden rows and can move/split them.
+    const init: Record<number, boolean> = {};
+    clusters.forEach((c, i) => { if (c.descriptions.length > 2) init[i] = true; });
+    return init;
+  });
   const [filter, setFilter] = useState<"all" | "new" | "existing">("all");
   // per-cluster selected descriptions (by description string)
   const [selected, setSelected] = useState<Record<number, Set<string>>>({});
