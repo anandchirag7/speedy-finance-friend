@@ -618,7 +618,7 @@ function PayeesStep({
     <>
       <div className="-mt-2 space-y-3">
         <p className="text-sm text-muted-foreground">
-          AI grouped similar statement descriptions into vendors. Rename, recategorize, or fix mistakes — expand a payee to move individual transactions to another payee or split them out into a new one.
+          Similar statement descriptions were grouped into vendors. Rename, recategorize, or fix mistakes — expand a payee to move individual transactions to another payee or split them out into a new one.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
