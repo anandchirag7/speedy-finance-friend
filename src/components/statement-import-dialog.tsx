@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search, Split, GitMerge, ArrowRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -200,10 +200,11 @@ export function StatementImportDialog() {
   };
 
   const onConfirmPayees = () => {
-    // Map each txn to its cluster's final name & category
-    const byOriginal = new Map(clusters.map((c) => [c.originalName, c]));
+    // Map each txn to its cluster by description (handles moves between clusters)
+    const byDesc = new Map<string, PayeeCluster>();
+    for (const c of clusters) for (const d of c.descriptions) byDesc.set(d, c);
     const mapped = rawTxns.map((t) => {
-      const cluster = byOriginal.get(t.payee);
+      const cluster = byDesc.get(t.description);
       const merchant = cluster?.name ?? t.payee ?? "";
       const category_id = cluster?.category_id ?? null;
       return { ...t, merchant, category_id, include: true };
@@ -526,11 +527,64 @@ function PayeesStep({
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<"all" | "new" | "existing">("all");
+  // per-cluster selected descriptions (by description string)
+  const [selected, setSelected] = useState<Record<number, Set<string>>>({});
 
   const update = (i: number, patch: Partial<PayeeCluster>) => {
     const copy = [...clusters];
     copy[i] = { ...copy[i], ...patch };
     setClusters(copy);
+  };
+
+  // Remove descriptions from a source cluster and drop empty clusters
+  const pruneEmpty = (arr: PayeeCluster[]) => arr.filter((c) => c.descriptions.length > 0);
+
+  const moveDescriptions = (fromIdx: number, descs: string[], toIdx: number) => {
+    if (!descs.length || fromIdx === toIdx) return;
+    const set = new Set(descs);
+    const copy = clusters.map((c, i) => {
+      if (i === fromIdx) return { ...c, descriptions: c.descriptions.filter((d) => !set.has(d)) };
+      if (i === toIdx) return { ...c, descriptions: [...c.descriptions, ...descs] };
+      return c;
+    });
+    setClusters(pruneEmpty(copy));
+    setSelected({ ...selected, [fromIdx]: new Set() });
+  };
+
+  const splitToNewCluster = (fromIdx: number, descs: string[]) => {
+    if (!descs.length) return;
+    const src = clusters[fromIdx];
+    const set = new Set(descs);
+    const newCluster: PayeeCluster = {
+      originalName: descs[0].slice(0, 60),
+      name: descs[0].slice(0, 60),
+      descriptions: descs,
+      category_id: src.category_id,
+      type: src.type,
+      saveAsPayee: true,
+      isExisting: false,
+    };
+    const copy = clusters.map((c, i) =>
+      i === fromIdx ? { ...c, descriptions: c.descriptions.filter((d) => !set.has(d)) } : c,
+    );
+    setClusters([...pruneEmpty(copy), newCluster]);
+    setSelected({ ...selected, [fromIdx]: new Set() });
+  };
+
+  const mergeCluster = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const src = clusters[fromIdx];
+    const copy = clusters
+      .map((c, i) => (i === toIdx ? { ...c, descriptions: [...c.descriptions, ...src.descriptions] } : c))
+      .filter((_, i) => i !== fromIdx);
+    setClusters(copy);
+  };
+
+  const toggleSelect = (i: number, d: string) => {
+    const cur = new Set(selected[i] ?? []);
+    if (cur.has(d)) cur.delete(d);
+    else cur.add(d);
+    setSelected({ ...selected, [i]: cur });
   };
 
   const q = query.trim().toLowerCase();
@@ -553,7 +607,7 @@ function PayeesStep({
     <>
       <div className="-mt-2 space-y-3">
         <p className="text-sm text-muted-foreground">
-          AI grouped similar statement descriptions into vendors. Review the suggested payee name, rename if needed, and pick a category before importing transactions.
+          AI grouped similar statement descriptions into vendors. Rename, recategorize, or fix mistakes — expand a payee to move individual transactions to another payee or split them out into a new one.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
@@ -592,6 +646,10 @@ function PayeesStep({
           const isOpen = !!expanded[i];
           const preview = c.descriptions.slice(0, 2);
           const remaining = c.descriptions.length - preview.length;
+          const sel = selected[i] ?? new Set<string>();
+          const otherClusters = clusters
+            .map((cc, idx) => ({ cc, idx }))
+            .filter(({ idx }) => idx !== i);
           return (
             <div key={i} className="bg-background p-3 sm:p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
@@ -624,7 +682,7 @@ function PayeesStep({
                   </div>
                 </div>
 
-                {/* Category + Save toggle */}
+                {/* Category + Save toggle + Merge */}
                 <div className="flex flex-col gap-2 lg:w-72 lg:shrink-0">
                   <div className="space-y-1.5">
                     <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -656,6 +714,28 @@ function PayeesStep({
                       {c.isExisting ? "Already in Memorized Payees" : "Save to Memorized Payees"}
                     </span>
                   </label>
+                  {otherClusters.length > 0 && (
+                    <Select
+                      value=""
+                      onValueChange={(v) => {
+                        const targetIdx = Number(v);
+                        if (!Number.isNaN(targetIdx)) mergeCluster(i, targetIdx);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          <GitMerge className="h-3 w-3" /> Merge this payee into…
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {otherClusters.map(({ cc, idx }) => (
+                          <SelectItem key={idx} value={String(idx)}>
+                            {cc.name || "(unnamed)"} · {cc.descriptions.length}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
 
@@ -669,12 +749,95 @@ function PayeesStep({
                   <span className="flex items-center gap-1.5">
                     {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     Matched descriptions ({c.descriptions.length})
+                    {isOpen && <span className="ml-2 text-[10px] font-normal text-muted-foreground/80">select rows to move or split</span>}
                   </span>
                   {!isOpen && remaining > 0 && <span className="text-[10px]">+{remaining} more</span>}
                 </button>
-                <div className="px-3 pb-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+
+                {isOpen && sel.size > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 border-t bg-background/70 px-3 py-2 text-xs">
+                    <span className="font-medium">{sel.size} selected</span>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      {otherClusters.length > 0 && (
+                        <Select
+                          value=""
+                          onValueChange={(v) => {
+                            const targetIdx = Number(v);
+                            if (!Number.isNaN(targetIdx)) moveDescriptions(i, Array.from(sel), targetIdx);
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-56 text-xs">
+                            <span className="flex items-center gap-1.5 text-muted-foreground">
+                              <ArrowRight className="h-3 w-3" /> Move to payee…
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {otherClusters.map(({ cc, idx }) => (
+                              <SelectItem key={idx} value={String(idx)}>
+                                {cc.name || "(unnamed)"} · {cc.descriptions.length}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => splitToNewCluster(i, Array.from(sel))}
+                      >
+                        <Split className="h-3 w-3" /> Split into new payee
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => setSelected({ ...selected, [i]: new Set() })}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="px-3 pb-2 pt-1 font-mono text-[11px] leading-relaxed">
+                  {isOpen && c.descriptions.length > 1 && (
+                    <label className="mb-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={sel.size === c.descriptions.length}
+                        onChange={(e) => {
+                          setSelected({
+                            ...selected,
+                            [i]: e.target.checked ? new Set(c.descriptions) : new Set(),
+                          });
+                        }}
+                      />
+                      Select all
+                    </label>
+                  )}
                   {(isOpen ? c.descriptions : preview).map((d, di) => (
-                    <div key={di} className="break-all">• {d}</div>
+                    <div key={di} className="flex items-start gap-2 py-0.5">
+                      {isOpen && (
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={sel.has(d)}
+                          onChange={() => toggleSelect(i, d)}
+                        />
+                      )}
+                      <div className="flex-1 break-all text-muted-foreground">{d}</div>
+                      {isOpen && (
+                        <button
+                          type="button"
+                          title="Split this row into its own new payee"
+                          onClick={() => splitToNewCluster(i, [d])}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
