@@ -133,17 +133,18 @@ function parseDate(v: any): string | null {
 }
 
 function findKey(headers: string[], candidates: string[]): string | null {
-  const nh = headers.map(norm);
+  const nh = headers.map((h) => norm(h));
   for (const cand of candidates) {
-    const i = nh.findIndex((h) => h === cand);
+    const i = nh.findIndex((h) => (h ?? "") === cand);
     if (i >= 0) return headers[i];
   }
   for (const cand of candidates) {
-    const i = nh.findIndex((h) => h.includes(cand));
+    const i = nh.findIndex((h) => (h ?? "").includes(cand));
     if (i >= 0) return headers[i];
   }
   return null;
 }
+
 
 /** Detect the header row in a sheet: pick the row that maximises known-column matches. */
 function detectHeader(rows: any[][]): { headerIdx: number; headers: string[] } | null {
