@@ -347,7 +347,7 @@ function clusterPayeesFast(
   existingPayees: string[],
   typeByDesc = new Map<string, "expense" | "income" | "transfer">(),
 ): Promise<Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>> {
-  if (!descriptions.length) return [];
+  if (!descriptions.length) return Promise.resolve([]);
 
   const existingIndex = existingPayees.map((name) => ({ name, key: payeeKey(name), tokens: tokens(name) }));
   const groups = new Map<string, { name: string; descriptions: Set<string>; isExisting: boolean }>();
