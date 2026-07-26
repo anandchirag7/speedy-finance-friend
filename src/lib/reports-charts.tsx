@@ -53,7 +53,11 @@ function truncate(s: string, n = 22) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-export function buildChartData(output: ReportOutput, hint: ChartHint) {
+export function buildChartData(
+  output: ReportOutput,
+  hint: ChartHint,
+  compare?: ReportOutput | null,
+) {
   const rows = output.rows.map((r) => {
     const label = String(r[hint.xCol] ?? "");
     const obj: Record<string, any> = { label };
@@ -64,11 +68,25 @@ export function buildChartData(output: ReportOutput, hint: ChartHint) {
     return obj;
   });
   const keys = hint.yCols.map((c, i) => hint.yLabels?.[i] ?? output.columns[c] ?? `v${i}`);
+
+  const compareKeys: string[] = [];
+  if (compare && (hint.type === "line" || hint.type === "area" || hint.type === "bar" || hint.type === "combo")) {
+    const cmpRows = compare.rows;
+    keys.forEach((k) => compareKeys.push(`${k} (prev)`));
+    rows.forEach((row, idx) => {
+      const cmp = cmpRows[idx];
+      if (!cmp) return;
+      hint.yCols.forEach((c, i) => {
+        row[compareKeys[i]] = parseChartNumber(cmp[c] as any);
+      });
+    });
+  }
+
   if (hint.type === "hbar" || hint.type === "pie") {
     rows.sort((a, b) => (b[keys[0]] ?? 0) - (a[keys[0]] ?? 0));
   }
   const limited = hint.maxItems ? rows.slice(0, hint.maxItems) : rows;
-  return { data: limited, keys };
+  return { data: limited, keys, compareKeys };
 }
 
 export function ReportChart({
