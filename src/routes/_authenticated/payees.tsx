@@ -1007,7 +1007,10 @@ function DetailsPanel({
           </div>
         </Section>
 
+        <PayeeRulesSection payeeId={payee.id} defaultTxnType={payee.txn_type} cats={cats} accts={accts} />
+
         <Section title="Automation rules" defaultOpen>
+
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {[
               ["auto_categorize", "Automatically categorize"],
