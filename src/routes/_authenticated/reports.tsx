@@ -158,11 +158,11 @@ function ReportsPage() {
   // Apply drill-down filter to preview output (does not affect PDF/CSV of full report unless active).
   const drilledOutput = useMemo<ReportOutput | null>(() => {
     if (!output) return null;
-    if (!drillLabel || !openReport?.chart) return output;
-    const xCol = openReport.chart.xCol;
+    if (!drillLabel || !output.chart) return output;
+    const xCol = output.chart.xCol;
     const rows = output.rows.filter((r) => String(r[xCol] ?? "") === drillLabel);
     return { ...output, rows, footer: undefined };
-  }, [output, drillLabel, openReport]);
+  }, [output, drillLabel]);
 
   const handleDownloadPDF = async (report: ReportDef, out?: ReportOutput) => {
     if (!data) {
