@@ -352,6 +352,7 @@ export function ReportChart({
                   radius={[3, 3, 0, 0]}
                 />
               );
+            })}
           </BarChart>
         )}
       </ResponsiveContainer>
