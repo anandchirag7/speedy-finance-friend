@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -63,7 +64,6 @@ export function buildChartData(output: ReportOutput, hint: ChartHint) {
     return obj;
   });
   const keys = hint.yCols.map((c, i) => hint.yLabels?.[i] ?? output.columns[c] ?? `v${i}`);
-  // For hbar/pie: sort by first metric desc and limit
   if (hint.type === "hbar" || hint.type === "pie") {
     rows.sort((a, b) => (b[keys[0]] ?? 0) - (a[keys[0]] ?? 0));
   }
@@ -71,114 +71,222 @@ export function buildChartData(output: ReportOutput, hint: ChartHint) {
   return { data: limited, keys };
 }
 
-export function ReportChart({ output, hint, height = 260 }: { output: ReportOutput; hint: ChartHint; height?: number }) {
-  const { data, keys } = buildChartData(output, hint);
-  if (!data.length) return null;
-  const tooltipFmt = (v: any) => formatValue(Number(v), hint.format);
+export function ReportChart({
+  output,
+  hint,
+  height = 260,
+  activeLabel,
+  onSegmentClick,
+}: {
+  output: ReportOutput;
+  hint: ChartHint;
+  height?: number;
+  activeLabel?: string | null;
+  onSegmentClick?: (label: string | null) => void;
+}) {
+  const { data, keys } = useMemo(() => buildChartData(output, hint), [output, hint]);
+  const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  const activeKeys = keys.filter((k) => !hidden[k]);
 
-  const commonAxis = {
-    tick: { fontSize: 11, fill: "#475569" },
-    stroke: "#cbd5e1",
+  if (!data.length) return null;
+
+  const tooltipFmt = (v: any) => formatValue(Number(v), hint.format);
+  const commonAxis = { tick: { fontSize: 11, fill: "#475569" }, stroke: "#cbd5e1" };
+  const toggleKey = (k: string) => setHidden((h) => ({ ...h, [k]: !h[k] }));
+
+  const handleClick = (payload: any) => {
+    if (!onSegmentClick) return;
+    const label: string | undefined = payload?.activeLabel ?? payload?.label ?? payload?.name;
+    if (!label) return;
+    onSegmentClick(activeLabel === label ? null : label);
   };
 
-  return (
-    <div className="rounded-lg border bg-card p-3">
-      {hint.title && (
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{hint.title}</div>
+  const legend = (
+    <Legend
+      wrapperStyle={{ fontSize: 11, cursor: "pointer" }}
+      onClick={(e: any) => e?.dataKey && toggleKey(String(e.dataKey))}
+      formatter={(value: string) => (
+        <span style={{ color: hidden[value] ? "#94a3b8" : "#334155", textDecoration: hidden[value] ? "line-through" : "none" }}>
+          {value}
+        </span>
       )}
+    />
+  );
+
+  const wrapperCls = "rounded-lg border bg-card p-2 sm:p-3";
+
+  return (
+    <div className={wrapperCls}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {hint.title && (
+          <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">
+            {hint.title}
+          </div>
+        )}
+        {activeLabel && onSegmentClick && (
+          <button
+            onClick={() => onSegmentClick(null)}
+            className="shrink-0 rounded-full border bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+          >
+            {truncate(activeLabel, 18)} ✕
+          </button>
+        )}
+      </div>
       <ResponsiveContainer width="100%" height={height}>
         {hint.type === "pie" ? (
           <PieChart>
             <Tooltip formatter={tooltipFmt} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            {legend}
             <Pie
               data={data}
               dataKey={keys[0]}
               nameKey="label"
-              innerRadius={50}
-              outerRadius={95}
+              innerRadius="45%"
+              outerRadius="80%"
               paddingAngle={2}
-              label={(e) => truncate(e.label, 14)}
               labelLine={false}
+              onClick={(e: any) => onSegmentClick && onSegmentClick(activeLabel === e?.label ? null : e?.label)}
+              style={{ cursor: onSegmentClick ? "pointer" : "default" }}
             >
-              {data.map((_, i) => (
-                <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+              {data.map((d, i) => (
+                <Cell
+                  key={i}
+                  fill={PALETTE[i % PALETTE.length]}
+                  fillOpacity={activeLabel && activeLabel !== d.label ? 0.25 : 1}
+                />
               ))}
             </Pie>
           </PieChart>
         ) : hint.type === "hbar" ? (
-          <BarChart data={data} layout="vertical" margin={{ left: 20, right: 20, top: 4, bottom: 4 }}>
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ left: 8, right: 16, top: 4, bottom: 4 }}
+            onClick={handleClick}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis type="number" {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} />
             <YAxis
               dataKey="label"
               type="category"
-              width={140}
+              width={110}
               tick={{ fontSize: 11, fill: "#475569" }}
-              tickFormatter={(l) => truncate(String(l), 18)}
+              tickFormatter={(l) => truncate(String(l), 16)}
             />
             <Tooltip formatter={tooltipFmt} />
-            <Bar dataKey={keys[0]} radius={[0, 4, 4, 0]}>
-              {data.map((_, i) => (
-                <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
+            <Bar
+              dataKey={keys[0]}
+              radius={[0, 4, 4, 0]}
+              style={{ cursor: onSegmentClick ? "pointer" : "default" }}
+            >
+              {data.map((d, i) => (
+                <Cell
+                  key={i}
+                  fill={PALETTE[i % PALETTE.length]}
+                  fillOpacity={activeLabel && activeLabel !== d.label ? 0.3 : 1}
+                />
               ))}
             </Bar>
           </BarChart>
         ) : hint.type === "line" ? (
-          <LineChart data={data} margin={{ left: 8, right: 12, top: 4, bottom: 4 }}>
+          <LineChart data={data} margin={{ left: 4, right: 8, top: 4, bottom: 4 }} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="label" {...commonAxis} />
-            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={70} />
+            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={56} />
             <Tooltip formatter={tooltipFmt} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            {keys.map((k, i) => (
-              <Line key={k} type="monotone" dataKey={k} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={false} />
-            ))}
+            {legend}
+            {activeKeys.map((k) => {
+              const i = keys.indexOf(k);
+              return (
+                <Line
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  strokeWidth={2}
+                  dot={false}
+                />
+              );
+            })}
           </LineChart>
         ) : hint.type === "area" ? (
-          <AreaChart data={data} margin={{ left: 8, right: 12, top: 4, bottom: 4 }}>
+          <AreaChart data={data} margin={{ left: 4, right: 8, top: 4, bottom: 4 }} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="label" {...commonAxis} />
-            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={70} />
+            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={56} />
             <Tooltip formatter={tooltipFmt} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            {keys.map((k, i) => (
-              <Area
-                key={k}
-                type="monotone"
-                dataKey={k}
-                stroke={PALETTE[i % PALETTE.length]}
-                fill={PALETTE[i % PALETTE.length]}
-                fillOpacity={0.2}
-                strokeWidth={2}
-              />
-            ))}
+            {legend}
+            {activeKeys.map((k) => {
+              const i = keys.indexOf(k);
+              return (
+                <Area
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  fill={PALETTE[i % PALETTE.length]}
+                  fillOpacity={0.2}
+                  strokeWidth={2}
+                />
+              );
+            })}
           </AreaChart>
         ) : hint.type === "combo" ? (
-          <ComposedChart data={data} margin={{ left: 8, right: 12, top: 4, bottom: 4 }}>
+          <ComposedChart data={data} margin={{ left: 4, right: 8, top: 4, bottom: 4 }} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="label" {...commonAxis} />
-            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={70} />
+            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={56} />
             <Tooltip formatter={tooltipFmt} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            {keys.map((k, i) =>
-              i < keys.length - 1 ? (
-                <Bar key={k} dataKey={k} fill={PALETTE[i % PALETTE.length]} radius={[3, 3, 0, 0]} />
+            {legend}
+            {activeKeys.map((k) => {
+              const i = keys.indexOf(k);
+              return i < keys.length - 1 ? (
+                <Bar
+                  key={k}
+                  dataKey={k}
+                  fill={PALETTE[i % PALETTE.length]}
+                  radius={[3, 3, 0, 0]}
+                  style={{ cursor: onSegmentClick ? "pointer" : "default" }}
+                >
+                  {data.map((d, di) => (
+                    <Cell key={di} fillOpacity={activeLabel && activeLabel !== d.label ? 0.3 : 1} />
+                  ))}
+                </Bar>
               ) : (
-                <Line key={k} type="monotone" dataKey={k} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={false} />
-              ),
-            )}
+                <Line
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  strokeWidth={2}
+                  dot={false}
+                />
+              );
+            })}
           </ComposedChart>
         ) : (
-          <BarChart data={data} margin={{ left: 8, right: 12, top: 4, bottom: 4 }}>
+          <BarChart data={data} margin={{ left: 4, right: 8, top: 4, bottom: 4 }} onClick={handleClick}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="label" {...commonAxis} />
-            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={70} />
+            <YAxis {...commonAxis} tickFormatter={(v) => formatValue(v, hint.format)} width={56} />
             <Tooltip formatter={tooltipFmt} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            {keys.map((k, i) => (
-              <Bar key={k} dataKey={k} fill={PALETTE[i % PALETTE.length]} radius={[3, 3, 0, 0]} />
-            ))}
+            {legend}
+            {activeKeys.map((k) => {
+              const i = keys.indexOf(k);
+              return (
+                <Bar
+                  key={k}
+                  dataKey={k}
+                  fill={PALETTE[i % PALETTE.length]}
+                  radius={[3, 3, 0, 0]}
+                  style={{ cursor: onSegmentClick ? "pointer" : "default" }}
+                >
+                  {data.map((d, di) => (
+                    <Cell key={di} fillOpacity={activeLabel && activeLabel !== d.label ? 0.3 : 1} />
+                  ))}
+                </Bar>
+              );
+            })}
           </BarChart>
         )}
       </ResponsiveContainer>
@@ -203,7 +311,6 @@ export async function renderChartToPngDataUrl(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  // Title
   if (hint.title) {
     ctx.fillStyle = "#0f172a";
     ctx.font = "bold 16px Helvetica, Arial, sans-serif";
@@ -236,7 +343,6 @@ export async function renderChartToPngDataUrl(
       ctx.fill();
       start += angle;
     });
-    // Legend
     ctx.font = "11px Helvetica, Arial, sans-serif";
     const legendX = 16,
       legendY = padT + 8;
@@ -256,7 +362,6 @@ export async function renderChartToPngDataUrl(
   const maxV = Math.max(1, ...allVals);
   const minV = Math.min(0, ...allVals);
 
-  // Axis
   ctx.strokeStyle = "#cbd5e1";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -265,7 +370,6 @@ export async function renderChartToPngDataUrl(
   ctx.lineTo(padL + cw, padT + ch);
   ctx.stroke();
 
-  // Gridlines + Y ticks
   ctx.fillStyle = "#64748b";
   ctx.font = "10px Helvetica, Arial, sans-serif";
   const ticks = 5;
@@ -324,7 +428,6 @@ export async function renderChartToPngDataUrl(
         ctx.fill();
       }
     });
-    // x labels sparse
     ctx.fillStyle = "#64748b";
     ctx.font = "10px Helvetica, Arial, sans-serif";
     const labelEvery = Math.ceil(data.length / 10);
@@ -335,7 +438,6 @@ export async function renderChartToPngDataUrl(
       ctx.fillText(t, x - 20, padT + ch + 14);
     });
   } else {
-    // bar / combo
     const group = cw / data.length;
     const isCombo = hint.type === "combo";
     const barKeys = isCombo ? keys.slice(0, keys.length - 1) : keys;
@@ -375,7 +477,6 @@ export async function renderChartToPngDataUrl(
     });
   }
 
-  // Legend for multi-series
   if (keys.length > 1) {
     ctx.font = "11px Helvetica, Arial, sans-serif";
     let lx = padL;
