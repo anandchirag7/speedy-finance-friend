@@ -25,7 +25,7 @@ export const listReportPresets = createServerFn({ method: "GET" })
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false });
     if (error) throw error;
-    return (data ?? []) as Array<{
+    return (data ?? []) as unknown as Array<{
       id: string;
       name: string;
       config: ReportPresetConfig;
