@@ -53,7 +53,11 @@ function truncate(s: string, n = 22) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-export function buildChartData(output: ReportOutput, hint: ChartHint) {
+export function buildChartData(
+  output: ReportOutput,
+  hint: ChartHint,
+  compare?: ReportOutput | null,
+) {
   const rows = output.rows.map((r) => {
     const label = String(r[hint.xCol] ?? "");
     const obj: Record<string, any> = { label };
@@ -64,11 +68,25 @@ export function buildChartData(output: ReportOutput, hint: ChartHint) {
     return obj;
   });
   const keys = hint.yCols.map((c, i) => hint.yLabels?.[i] ?? output.columns[c] ?? `v${i}`);
+
+  const compareKeys: string[] = [];
+  if (compare && (hint.type === "line" || hint.type === "area" || hint.type === "bar" || hint.type === "combo")) {
+    const cmpRows = compare.rows;
+    keys.forEach((k) => compareKeys.push(`${k} (prev)`));
+    rows.forEach((row, idx) => {
+      const cmp = cmpRows[idx];
+      if (!cmp) return;
+      hint.yCols.forEach((c, i) => {
+        row[compareKeys[i]] = parseChartNumber(cmp[c] as any);
+      });
+    });
+  }
+
   if (hint.type === "hbar" || hint.type === "pie") {
     rows.sort((a, b) => (b[keys[0]] ?? 0) - (a[keys[0]] ?? 0));
   }
   const limited = hint.maxItems ? rows.slice(0, hint.maxItems) : rows;
-  return { data: limited, keys };
+  return { data: limited, keys, compareKeys };
 }
 
 export function ReportChart({
@@ -77,16 +95,22 @@ export function ReportChart({
   height = 260,
   activeLabel,
   onSegmentClick,
+  compareOutput,
 }: {
   output: ReportOutput;
   hint: ChartHint;
   height?: number;
   activeLabel?: string | null;
   onSegmentClick?: (label: string | null) => void;
+  compareOutput?: ReportOutput | null;
 }) {
-  const { data, keys } = useMemo(() => buildChartData(output, hint), [output, hint]);
+  const { data, keys, compareKeys } = useMemo(
+    () => buildChartData(output, hint, compareOutput ?? null),
+    [output, hint, compareOutput],
+  );
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const activeKeys = keys.filter((k) => !hidden[k]);
+  const activeCompareKeys = compareKeys.filter((k) => !hidden[k]);
 
   if (!data.length) return null;
 
@@ -208,6 +232,21 @@ export function ReportChart({
                 />
               );
             })}
+            {activeCompareKeys.map((k) => {
+              const i = compareKeys.indexOf(k);
+              return (
+                <Line
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                  strokeOpacity={0.7}
+                  dot={false}
+                />
+              );
+            })}
           </LineChart>
         ) : hint.type === "area" ? (
           <AreaChart data={data} margin={{ left: 4, right: 8, top: 4, bottom: 4 }} onClick={handleClick}>
@@ -226,6 +265,21 @@ export function ReportChart({
                   stroke={PALETTE[i % PALETTE.length]}
                   fill={PALETTE[i % PALETTE.length]}
                   fillOpacity={0.2}
+                  strokeWidth={2}
+                />
+              );
+            })}
+            {activeCompareKeys.map((k) => {
+              const i = compareKeys.indexOf(k);
+              return (
+                <Area
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  fill="transparent"
+                  strokeDasharray="4 3"
+                  strokeOpacity={0.75}
                   strokeWidth={2}
                 />
               );
@@ -285,6 +339,18 @@ export function ReportChart({
                     <Cell key={di} fillOpacity={activeLabel && activeLabel !== d.label ? 0.3 : 1} />
                   ))}
                 </Bar>
+              );
+            })}
+            {activeCompareKeys.map((k) => {
+              const i = compareKeys.indexOf(k);
+              return (
+                <Bar
+                  key={k}
+                  dataKey={k}
+                  fill={PALETTE[i % PALETTE.length]}
+                  fillOpacity={0.4}
+                  radius={[3, 3, 0, 0]}
+                />
               );
             })}
           </BarChart>

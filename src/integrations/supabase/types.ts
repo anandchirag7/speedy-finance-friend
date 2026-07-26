@@ -1333,6 +1333,84 @@ export type Database = {
           },
         ]
       }
+      report_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error: string | null
+          files: Json
+          format: string
+          from_date: string
+          id: string
+          progress: number
+          progress_message: string | null
+          report_ids: string[]
+          status: string
+          to_date: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error?: string | null
+          files?: Json
+          format: string
+          from_date: string
+          id?: string
+          progress?: number
+          progress_message?: string | null
+          report_ids?: string[]
+          status?: string
+          to_date: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error?: string | null
+          files?: Json
+          format?: string
+          from_date?: string
+          id?: string
+          progress?: number
+          progress_message?: string | null
+          report_ids?: string[]
+          status?: string
+          to_date?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      report_presets: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transaction_activity: {
         Row: {
           action: string

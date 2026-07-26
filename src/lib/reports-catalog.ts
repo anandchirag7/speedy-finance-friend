@@ -436,7 +436,7 @@ export const REPORTS: ReportDef[] = [
     description: "Rolling averages to understand your run-rate.",
     compute: (d) => {
       const expenses = d.transactions.filter((t: any) => t.type === "expense");
-      const total = expenses.reduce((s, t: any) => s + num(t.amount), 0);
+      const total = expenses.reduce((s: number, t: any) => s + num(t.amount), 0);
       const days = Math.max(1, Math.ceil((new Date(d.to).getTime() - new Date(d.from).getTime()) / 86400000) + 1);
       return {
         columns: ["Metric", "Value"],
