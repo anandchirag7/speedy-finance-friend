@@ -27,6 +27,7 @@ import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
 import { Route as AuthenticatedAccountsAccountIdRouteImport } from './routes/_authenticated/accounts_.$accountId'
+import { Route as ApiPublicHooksBillsWhatsappRemindersRouteImport } from './routes/api/public/hooks/bills-whatsapp-reminders'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -121,6 +122,12 @@ const AuthenticatedAccountsAccountIdRoute =
     path: '/accounts/$accountId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const ApiPublicHooksBillsWhatsappRemindersRoute =
+  ApiPublicHooksBillsWhatsappRemindersRouteImport.update({
+    id: '/api/public/hooks/bills-whatsapp-reminders',
+    path: '/api/public/hooks/bills-whatsapp-reminders',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
+  '/api/public/hooks/bills-whatsapp-reminders': typeof ApiPublicHooksBillsWhatsappRemindersRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -158,6 +166,7 @@ export interface FileRoutesByTo {
   '/accounts/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat': typeof AuthenticatedChatIndexRoute
+  '/api/public/hooks/bills-whatsapp-reminders': typeof ApiPublicHooksBillsWhatsappRemindersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -179,6 +188,7 @@ export interface FileRoutesById {
   '/_authenticated/accounts_/$accountId': typeof AuthenticatedAccountsAccountIdRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
+  '/api/public/hooks/bills-whatsapp-reminders': typeof ApiPublicHooksBillsWhatsappRemindersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
     | '/accounts/$accountId'
     | '/chat/$threadId'
     | '/chat/'
+    | '/api/public/hooks/bills-whatsapp-reminders'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/accounts/$accountId'
     | '/chat/$threadId'
     | '/chat'
+    | '/api/public/hooks/bills-whatsapp-reminders'
   id:
     | '__root__'
     | '/_authenticated'
@@ -238,12 +250,14 @@ export interface FileRouteTypes {
     | '/_authenticated/accounts_/$accountId'
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/chat/'
+    | '/api/public/hooks/bills-whatsapp-reminders'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiPublicHooksBillsWhatsappRemindersRoute: typeof ApiPublicHooksBillsWhatsappRemindersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -374,6 +388,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountsAccountIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/hooks/bills-whatsapp-reminders': {
+      id: '/api/public/hooks/bills-whatsapp-reminders'
+      path: '/api/public/hooks/bills-whatsapp-reminders'
+      fullPath: '/api/public/hooks/bills-whatsapp-reminders'
+      preLoaderRoute: typeof ApiPublicHooksBillsWhatsappRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -429,6 +450,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiPublicHooksBillsWhatsappRemindersRoute:
+    ApiPublicHooksBillsWhatsappRemindersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

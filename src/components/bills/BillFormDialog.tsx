@@ -48,6 +48,8 @@ const DEFAULT: any = {
   min_amount: null,
   max_amount: null,
   notes: "",
+  whatsapp_enabled: true,
+  whatsapp_number: "",
 };
 
 export function BillFormDialog({ open, onOpenChange, bill }: Props) {
@@ -85,6 +87,7 @@ export function BillFormDialog({ open, onOpenChange, bill }: Props) {
         account_id: f.account_id || null,
         category_id: f.category_id || null,
         payee_id: f.payee_id || null,
+        whatsapp_number: f.whatsapp_number?.trim() ? f.whatsapp_number.trim() : null,
       };
       if (bill?.id) payload.id = bill.id;
       return upsert({ data: payload });
