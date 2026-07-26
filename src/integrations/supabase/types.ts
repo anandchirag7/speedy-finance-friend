@@ -926,6 +926,89 @@ export type Database = {
           },
         ]
       }
+      payee_rules: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          default_amount: number | null
+          household_id: string
+          id: string
+          is_active: boolean
+          max_amount: number | null
+          memo: string | null
+          min_amount: number | null
+          payee_id: string
+          priority: number
+          tags: string[]
+          transfer_account_id: string | null
+          txn_type: string
+          updated_at: string
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          default_amount?: number | null
+          household_id: string
+          id?: string
+          is_active?: boolean
+          max_amount?: number | null
+          memo?: string | null
+          min_amount?: number | null
+          payee_id: string
+          priority?: number
+          tags?: string[]
+          transfer_account_id?: string | null
+          txn_type: string
+          updated_at?: string
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          default_amount?: number | null
+          household_id?: string
+          id?: string
+          is_active?: boolean
+          max_amount?: number | null
+          memo?: string | null
+          min_amount?: number | null
+          payee_id?: string
+          priority?: number
+          tags?: string[]
+          transfer_account_id?: string | null
+          txn_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payee_rules_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payee_rules_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payee_rules_payee_id_fkey"
+            columns: ["payee_id"]
+            isOneToOne: false
+            referencedRelation: "memorized_payees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payee_rules_transfer_account_id_fkey"
+            columns: ["transfer_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       price_history: {
         Row: {
           id: string
