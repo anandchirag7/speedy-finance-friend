@@ -269,6 +269,21 @@ export function ReportChart({
                 />
               );
             })}
+            {activeCompareKeys.map((k) => {
+              const i = compareKeys.indexOf(k);
+              return (
+                <Line
+                  key={k}
+                  type="monotone"
+                  dataKey={k}
+                  stroke={PALETTE[i % PALETTE.length]}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                  strokeOpacity={0.75}
+                  dot={false}
+                />
+              );
+            })}
           </AreaChart>
         ) : hint.type === "combo" ? (
           <ComposedChart data={data} margin={{ left: 4, right: 8, top: 4, bottom: 4 }} onClick={handleClick}>
