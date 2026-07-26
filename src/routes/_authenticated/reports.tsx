@@ -38,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getReportsData } from "@/lib/reports.functions";
 import { REPORTS, REPORT_CATEGORIES, type ReportDef } from "@/lib/reports-catalog";
 import { exportReportToPDF } from "@/lib/reports-pdf";
+import { ReportChart } from "@/lib/reports-charts";
 
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({
