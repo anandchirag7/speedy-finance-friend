@@ -187,7 +187,7 @@ export const startReportExport = createServerFn({ method: "POST" })
 
     const jobId = job.id as string;
     const updateJob = async (patch: Record<string, unknown>) => {
-      await s.from("report_jobs").update(patch).eq("id", jobId);
+      await s.from("report_jobs").update(patch as any).eq("id", jobId);
     };
 
     try {
