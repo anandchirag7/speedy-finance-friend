@@ -88,6 +88,12 @@ import {
   listCategoriesForPayees,
   listAccountsForPayees,
 } from "@/lib/memorized-payees.functions";
+import {
+  listPayeeRules,
+  createPayeeRule,
+  updatePayeeRule,
+  deletePayeeRule,
+} from "@/lib/payee-rules.functions";
 
 export const Route = createFileRoute("/_authenticated/payees")({
   component: PayeesPage,
