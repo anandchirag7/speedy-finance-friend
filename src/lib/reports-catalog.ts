@@ -1,18 +1,29 @@
-// Reports catalog: 30+ report definitions.
-// Each report converts the shared ReportsData into a printable table (columns + rows)
-// with optional KPIs and grouping. Kept pure and framework-agnostic so the same
-// output feeds both the on-screen preview and the PDF exporter.
+// Reports catalog: 30+ report definitions with chart hints.
 
 import type { ReportsData } from "./reports.functions";
 
 export type ReportRow = (string | number)[];
+
+export type ChartType = "bar" | "line" | "area" | "pie" | "hbar" | "combo";
+export interface ChartHint {
+  type: ChartType;
+  title?: string;
+  xCol: number;
+  yCols: number[];
+  yLabels?: string[];
+  maxItems?: number;
+  format?: "currency" | "percent" | "number";
+}
+
 export interface ReportOutput {
   columns: string[];
   rows: ReportRow[];
   kpis?: { label: string; value: string }[];
-  numericColumns?: number[]; // indices to right-align / format as currency
+  numericColumns?: number[];
   emptyMessage?: string;
   footer?: ReportRow;
+  chart?: ChartHint;
+  chart2?: ChartHint;
 }
 
 export interface ReportDef {
@@ -59,6 +70,15 @@ function groupSum<T>(items: T[], keyFn: (t: T) => string, valFn: (t: T) => numbe
   return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
 }
 
+// Chart helpers: parse a currency/percent/number string back to a number for charting.
+export function parseChartNumber(x: string | number): number {
+  if (typeof x === "number") return isFinite(x) ? x : 0;
+  const s = String(x ?? "");
+  const m = s.replace(/[^\d.\-]/g, "");
+  const n = parseFloat(m);
+  return isFinite(n) ? n : 0;
+}
+
 // ---------- report definitions ----------
 export const REPORTS: ReportDef[] = [
   // ============== CASH FLOW ==============
@@ -90,6 +110,7 @@ export const REPORTS: ReportDef[] = [
           { label: "Net", value: fmtINR(net) },
           { label: "Savings rate", value: `${rate.toFixed(1)}%` },
         ],
+        chart: { type: "bar", title: "Income vs Spending vs Net", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -117,6 +138,14 @@ export const REPORTS: ReportDef[] = [
         numericColumns: [1, 2, 3],
         rows,
         footer: ["Total", fmtINR(tot.i), fmtINR(tot.e), fmtINR(tot.i - tot.e)],
+        chart: {
+          type: "combo",
+          title: "Monthly income, spending & net",
+          xCol: 0,
+          yCols: [1, 2, 3],
+          yLabels: ["Income", "Spending", "Net"],
+          format: "currency",
+        },
       };
     },
   },
@@ -140,6 +169,14 @@ export const REPORTS: ReportDef[] = [
         rows: [...map.entries()]
           .sort()
           .map(([w, v]) => [w, fmtINR(v.i), fmtINR(v.e), fmtINR(v.i - v.e)]),
+        chart: {
+          type: "line",
+          title: "Weekly net cash flow",
+          xCol: 0,
+          yCols: [1, 2, 3],
+          yLabels: ["Income", "Spending", "Net"],
+          format: "currency",
+        },
       };
     },
   },
@@ -161,6 +198,14 @@ export const REPORTS: ReportDef[] = [
         columns: ["Date", "Income", "Spending", "Net"],
         numericColumns: [1, 2, 3],
         rows: [...map.entries()].sort().map(([w, v]) => [w, fmtINR(v.i), fmtINR(v.e), fmtINR(v.i - v.e)]),
+        chart: {
+          type: "area",
+          title: "Daily net cash flow",
+          xCol: 0,
+          yCols: [3],
+          yLabels: ["Net"],
+          format: "currency",
+        },
       };
     },
   },
@@ -188,6 +233,14 @@ export const REPORTS: ReportDef[] = [
           fmtINR(v.e),
           `${v.i > 0 ? (((v.i - v.e) / v.i) * 100).toFixed(1) : "0.0"}%`,
         ]),
+        chart: {
+          type: "line",
+          title: "Monthly savings rate",
+          xCol: 0,
+          yCols: [3],
+          yLabels: ["Savings %"],
+          format: "percent",
+        },
       };
     },
   },
@@ -218,6 +271,7 @@ export const REPORTS: ReportDef[] = [
         numericColumns: [1],
         rows: rows.map(([k, v]) => [k, fmtINR(v), `${total ? ((v / total) * 100).toFixed(1) : "0.0"}%`]),
         footer: ["Total", fmtINR(total), "100.0%"],
+        chart: { type: "pie", title: "Spending by category", xCol: 0, yCols: [1], maxItems: 10, format: "currency" },
       };
     },
   },
@@ -244,6 +298,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Subcategory", "Amount", "% of spend"],
         numericColumns: [1],
         rows: rows.map(([k, v]) => [k, fmtINR(v), `${total ? ((v / total) * 100).toFixed(1) : "0.0"}%`]),
+        chart: { type: "hbar", title: "Top subcategories", xCol: 0, yCols: [1], maxItems: 12, format: "currency" },
       };
     },
   },
@@ -267,6 +322,7 @@ export const REPORTS: ReportDef[] = [
           ).length;
           return [k, fmtINR(v), fmtNum(count)];
         }),
+        chart: { type: "hbar", title: "Top payees by spend", xCol: 0, yCols: [1], maxItems: 12, format: "currency" },
       };
     },
   },
@@ -285,6 +341,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Account", "Amount"],
         numericColumns: [1],
         rows: rows.map(([k, v]) => [k, fmtINR(v)]),
+        chart: { type: "pie", title: "Spending by account", xCol: 0, yCols: [1], maxItems: 8, format: "currency" },
       };
     },
   },
@@ -309,6 +366,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Date", "Payee", "Category", "Account", "Amount"],
         numericColumns: [4],
         rows,
+        chart: { type: "hbar", title: "Top expenses", xCol: 1, yCols: [4], maxItems: 12, format: "currency" },
       };
     },
   },
@@ -340,6 +398,8 @@ export const REPORTS: ReportDef[] = [
           ["Weekdays", fmtINR(wd), fmtNum(wdN), fmtINR(wdN ? wd / wdN : 0)],
           ["Weekends", fmtINR(we), fmtNum(weN), fmtINR(weN ? we / weN : 0)],
         ],
+        chart: { type: "bar", title: "Weekday vs weekend spend", xCol: 0, yCols: [1], format: "currency" },
+        chart2: { type: "pie", title: "Share of spend", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -365,6 +425,7 @@ export const REPORTS: ReportDef[] = [
           .filter(([, v]) => v.days.size >= 3)
           .sort((a, b) => b[1].total - a[1].total)
           .map(([k, v]) => [k, fmtNum(v.days.size), fmtINR(v.total)]),
+        chart: { type: "hbar", title: "Recurring outflows", xCol: 0, yCols: [2], maxItems: 12, format: "currency" },
       };
     },
   },
@@ -410,6 +471,7 @@ export const REPORTS: ReportDef[] = [
         numericColumns: [1],
         rows: rows.map(([k, v]) => [k, fmtINR(v), `${total ? ((v / total) * 100).toFixed(1) : "0.0"}%`]),
         footer: ["Total", fmtINR(total), "100.0%"],
+        chart: { type: "pie", title: "Income by category", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -428,6 +490,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Source", "Amount"],
         numericColumns: [1],
         rows: rows.map(([k, v]) => [k, fmtINR(v)]),
+        chart: { type: "hbar", title: "Top income sources", xCol: 0, yCols: [1], maxItems: 12, format: "currency" },
       };
     },
   },
@@ -452,6 +515,7 @@ export const REPORTS: ReportDef[] = [
           const delta = prev ? (((v - prev) / prev) * 100).toFixed(1) + "%" : "—";
           return [m, fmtINR(v), delta];
         }),
+        chart: { type: "bar", title: "Monthly income", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -479,6 +543,14 @@ export const REPORTS: ReportDef[] = [
           fmtINR(v.e),
           v.e ? (v.i / v.e).toFixed(2) : "—",
         ]),
+        chart: {
+          type: "bar",
+          title: "Income vs Expense (monthly)",
+          xCol: 0,
+          yCols: [1, 2],
+          yLabels: ["Income", "Expense"],
+          format: "currency",
+        },
       };
     },
   },
@@ -511,6 +583,7 @@ export const REPORTS: ReportDef[] = [
           { label: "Liabilities", value: fmtINR(l) },
           { label: "Net worth", value: fmtINR(a - l) },
         ],
+        chart: { type: "bar", title: "Assets · Liabilities · Net worth", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -529,6 +602,14 @@ export const REPORTS: ReportDef[] = [
         fmtINR(num(s.net_worth)),
       ]),
       emptyMessage: "No net-worth snapshots recorded in this period.",
+      chart: {
+        type: "area",
+        title: "Net worth over time",
+        xCol: 0,
+        yCols: [1, 2, 3],
+        yLabels: ["Assets", "Liabilities", "Net worth"],
+        format: "currency",
+      },
     }),
   },
   {
@@ -548,6 +629,7 @@ export const REPORTS: ReportDef[] = [
         numericColumns: [1],
         rows: rows.map(([k, v]) => [k, fmtINR(v), `${total ? ((v / total) * 100).toFixed(1) : "0.0"}%`]),
         footer: ["Total", fmtINR(total), "100.0%"],
+        chart: { type: "pie", title: "Assets allocation", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -561,7 +643,12 @@ export const REPORTS: ReportDef[] = [
         .filter((a) => a.is_active && a.is_liability)
         .sort((a, b) => Math.abs(num(b.current_balance)) - Math.abs(num(a.current_balance)))
         .map((a) => [a.name, a.category ?? "—", fmtINR(Math.abs(num(a.current_balance)))]);
-      return { columns: ["Account", "Type", "Outstanding"], numericColumns: [2], rows };
+      return {
+        columns: ["Account", "Type", "Outstanding"],
+        numericColumns: [2],
+        rows,
+        chart: { type: "hbar", title: "Liabilities", xCol: 0, yCols: [2], format: "currency" },
+      };
     },
   },
 
@@ -581,6 +668,7 @@ export const REPORTS: ReportDef[] = [
         a.currency,
         fmtINR(num(a.current_balance)),
       ]),
+      chart: { type: "hbar", title: "Balances by account", xCol: 0, yCols: [4], maxItems: 15, format: "currency" },
     }),
   },
   {
@@ -604,6 +692,14 @@ export const REPORTS: ReportDef[] = [
         rows: [...map.values()]
           .filter((b) => b.count)
           .map((b) => [b.name, fmtNum(b.count), fmtINR(b.in), fmtINR(b.out), fmtINR(b.in - b.out)]),
+        chart: {
+          type: "bar",
+          title: "Inflow vs outflow by account",
+          xCol: 0,
+          yCols: [2, 3],
+          yLabels: ["Inflow", "Outflow"],
+          format: "currency",
+        },
       };
     },
   },
@@ -651,6 +747,14 @@ export const REPORTS: ReportDef[] = [
         numericColumns: [1, 2, 3],
         rows,
         emptyMessage: "No category budgets configured yet.",
+        chart: {
+          type: "bar",
+          title: "Planned vs actual by category",
+          xCol: 0,
+          yCols: [1, 2],
+          yLabels: ["Planned", "Actual"],
+          format: "currency",
+        },
       };
     },
   },
@@ -676,7 +780,12 @@ export const REPORTS: ReportDef[] = [
         .filter((r) => r.over > 0)
         .sort((a, b) => b.over - a.over)
         .map((r) => [r.name, fmtINR(r.planned), fmtINR(r.actual), fmtINR(r.over)]);
-      return { columns: ["Category", "Planned", "Actual", "Overrun"], numericColumns: [1, 2, 3], rows };
+      return {
+        columns: ["Category", "Planned", "Actual", "Overrun"],
+        numericColumns: [1, 2, 3],
+        rows,
+        chart: { type: "hbar", title: "Budget overruns", xCol: 0, yCols: [3], format: "currency" },
+      };
     },
   },
   {
@@ -688,6 +797,7 @@ export const REPORTS: ReportDef[] = [
       columns: ["Name", "Period", "Start", "Amount"],
       numericColumns: [3],
       rows: (d.budgets as any[]).map((b) => [b.name, b.period, b.start_date, fmtINR(num(b.amount))]),
+      chart: { type: "hbar", title: "Budget sizes", xCol: 0, yCols: [3], format: "currency" },
     }),
   },
 
@@ -705,7 +815,12 @@ export const REPORTS: ReportDef[] = [
         .filter((b) => b.status !== "paid" && b.due_date && new Date(b.due_date) <= horizon)
         .sort((a, b) => a.due_date.localeCompare(b.due_date))
         .map((b) => [b.name, b.due_date, b.status ?? "—", b.priority ?? "—", fmtINR(num(b.amount))]);
-      return { columns: ["Bill", "Due date", "Status", "Priority", "Amount"], numericColumns: [4], rows };
+      return {
+        columns: ["Bill", "Due date", "Status", "Priority", "Amount"],
+        numericColumns: [4],
+        rows,
+        chart: { type: "hbar", title: "Upcoming amounts by bill", xCol: 0, yCols: [4], maxItems: 15, format: "currency" },
+      };
     },
   },
   {
@@ -721,7 +836,12 @@ export const REPORTS: ReportDef[] = [
         p.status ?? "paid",
         fmtINR(num(p.amount)),
       ]);
-      return { columns: ["Paid on", "Bill", "Status", "Amount"], numericColumns: [3], rows };
+      return {
+        columns: ["Paid on", "Bill", "Status", "Amount"],
+        numericColumns: [3],
+        rows,
+        chart: { type: "bar", title: "Payments over time", xCol: 0, yCols: [3], format: "currency" },
+      };
     },
   },
   {
@@ -735,7 +855,12 @@ export const REPORTS: ReportDef[] = [
         .filter((b) => b.status !== "paid" && b.due_date < today)
         .sort((a, b) => a.due_date.localeCompare(b.due_date))
         .map((b) => [b.name, b.due_date, b.priority ?? "—", fmtINR(num(b.amount))]);
-      return { columns: ["Bill", "Due date", "Priority", "Amount"], numericColumns: [3], rows };
+      return {
+        columns: ["Bill", "Due date", "Priority", "Amount"],
+        numericColumns: [3],
+        rows,
+        chart: { type: "hbar", title: "Overdue amounts", xCol: 0, yCols: [3], format: "currency" },
+      };
     },
   },
   {
@@ -750,7 +875,22 @@ export const REPORTS: ReportDef[] = [
         b.whatsapp_enabled ? "Yes" : "No",
         fmtINR(num(b.amount)),
       ]);
-      return { columns: ["Bill", "Auto-pay", "WhatsApp", "Amount"], numericColumns: [3], rows };
+      const auto = (d.bills as any[]).filter((b) => b.auto_pay).length;
+      const manual = (d.bills as any[]).length - auto;
+      return {
+        columns: ["Bill", "Auto-pay", "WhatsApp", "Amount"],
+        numericColumns: [3],
+        rows,
+        chart: {
+          type: "pie",
+          title: "Auto-pay coverage",
+          xCol: 0,
+          yCols: [1],
+          format: "number",
+        },
+        // Overwrite chart data via footer? Instead simplify: use hbar of amounts by bill.
+        chart2: { type: "hbar", title: "Bill amounts", xCol: 0, yCols: [3], maxItems: 15, format: "currency" },
+      };
     },
   },
 
@@ -770,6 +910,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Payee", "Amount"],
         numericColumns: [1],
         rows: rows.slice(0, 100).map(([k, v]) => [k, fmtINR(v)]),
+        chart: { type: "hbar", title: "Top payees", xCol: 0, yCols: [1], maxItems: 15, format: "currency" },
       };
     },
   },
@@ -788,6 +929,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Payee", "Txns"],
         numericColumns: [1],
         rows: rows.slice(0, 100).map(([k, v]) => [k, fmtNum(v)]),
+        chart: { type: "hbar", title: "Most frequent payees", xCol: 0, yCols: [1], maxItems: 15, format: "number" },
       };
     },
   },
@@ -805,6 +947,7 @@ export const REPORTS: ReportDef[] = [
         p.default_category_id ? "Set" : "—",
         fmtNum(num(p.usage_count)),
       ]),
+      chart: { type: "hbar", title: "Most-used payees", xCol: 0, yCols: [3], maxItems: 15, format: "number" },
     }),
   },
 
@@ -845,6 +988,7 @@ export const REPORTS: ReportDef[] = [
           t.category?.name ?? "Uncategorized",
           fmtINR(num(t.amount)),
         ]),
+      chart: { type: "hbar", title: "Largest transactions", xCol: 2, yCols: [4], maxItems: 15, format: "currency" },
     }),
   },
   {
@@ -864,6 +1008,7 @@ export const REPORTS: ReportDef[] = [
           t.account?.name ?? "—",
           fmtINR(num(t.amount)),
         ]),
+      chart: { type: "hbar", title: "Uncategorized by payee", xCol: 2, yCols: [4], maxItems: 12, format: "currency" },
     }),
   },
   {
@@ -885,6 +1030,7 @@ export const REPORTS: ReportDef[] = [
             fmtINR(num(t.amount)),
             t.note ?? "",
           ]),
+        chart: { type: "bar", title: "Transfers over time", xCol: 0, yCols: [3], format: "currency" },
       };
     },
   },
@@ -903,6 +1049,7 @@ export const REPORTS: ReportDef[] = [
             /(refund|reversal|cashback|credit|reimbursement)/i.test(`${t.merchant ?? ""} ${t.note ?? ""}`),
         )
         .map((t) => [t.txn_date, t.merchant || t.note || "—", t.account?.name ?? "—", fmtINR(num(t.amount))]),
+      chart: { type: "bar", title: "Refunds over time", xCol: 0, yCols: [3], format: "currency" },
     }),
   },
 
@@ -928,6 +1075,7 @@ export const REPORTS: ReportDef[] = [
         numericColumns: [3],
         rows,
         footer: ["", "", "Total", fmtINR(total)],
+        chart: { type: "pie", title: "80C by instrument", xCol: 2, yCols: [3], format: "currency" },
       };
     },
   },
@@ -948,6 +1096,7 @@ export const REPORTS: ReportDef[] = [
         columns: ["Month", "Contribution"],
         numericColumns: [1],
         rows: [...map.entries()].sort().map(([m, v]) => [m, fmtINR(v)]),
+        chart: { type: "bar", title: "Monthly investment contributions", xCol: 0, yCols: [1], format: "currency" },
       };
     },
   },
@@ -961,7 +1110,12 @@ export const REPORTS: ReportDef[] = [
         .filter((t) => t.type === "transfer")
         .filter((t) => (d.accounts as any[]).find((a) => a.id === t.transfer_account_id && a.is_liability))
         .map((t) => [t.txn_date, t.account?.name ?? "—", fmtINR(num(t.amount)), t.note ?? ""]);
-      return { columns: ["Date", "From", "Amount", "Note"], numericColumns: [2], rows };
+      return {
+        columns: ["Date", "From", "Amount", "Note"],
+        numericColumns: [2],
+        rows,
+        chart: { type: "bar", title: "EMI outflows over time", xCol: 0, yCols: [2], format: "currency" },
+      };
     },
   },
 ];
