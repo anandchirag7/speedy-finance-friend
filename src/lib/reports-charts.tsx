@@ -95,16 +95,22 @@ export function ReportChart({
   height = 260,
   activeLabel,
   onSegmentClick,
+  compareOutput,
 }: {
   output: ReportOutput;
   hint: ChartHint;
   height?: number;
   activeLabel?: string | null;
   onSegmentClick?: (label: string | null) => void;
+  compareOutput?: ReportOutput | null;
 }) {
-  const { data, keys } = useMemo(() => buildChartData(output, hint), [output, hint]);
+  const { data, keys, compareKeys } = useMemo(
+    () => buildChartData(output, hint, compareOutput ?? null),
+    [output, hint, compareOutput],
+  );
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const activeKeys = keys.filter((k) => !hidden[k]);
+  const activeCompareKeys = compareKeys.filter((k) => !hidden[k]);
 
   if (!data.length) return null;
 
