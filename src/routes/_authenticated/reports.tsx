@@ -302,6 +302,14 @@ function ReportsPage() {
                     ))}
                   </div>
                 )}
+                  </div>
+                )}
+                {(output.chart || output.chart2) && (
+                  <div className="mb-4 grid gap-3 md:grid-cols-2">
+                    {output.chart && <ReportChart output={output} hint={output.chart} height={280} />}
+                    {output.chart2 && <ReportChart output={output} hint={output.chart2} height={280} />}
+                  </div>
+                )}
                 {output.rows.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
                     {output.emptyMessage ?? "No data for this period."}
