@@ -272,15 +272,15 @@ export function ReportChart({
             {activeCompareKeys.map((k) => {
               const i = compareKeys.indexOf(k);
               return (
-                <Line
+                <Area
                   key={k}
                   type="monotone"
                   dataKey={k}
                   stroke={PALETTE[i % PALETTE.length]}
-                  strokeWidth={2}
+                  fill="transparent"
                   strokeDasharray="4 3"
                   strokeOpacity={0.75}
-                  dot={false}
+                  strokeWidth={2}
                 />
               );
             })}
