@@ -302,8 +302,6 @@ function ReportsPage() {
                     ))}
                   </div>
                 )}
-                  </div>
-                )}
                 {(output.chart || output.chart2) && (
                   <div className="mb-4 grid gap-3 md:grid-cols-2">
                     {output.chart && <ReportChart output={output} hint={output.chart} height={280} />}
