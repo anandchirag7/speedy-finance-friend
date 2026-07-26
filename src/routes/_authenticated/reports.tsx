@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -18,6 +18,10 @@ import {
   BarChart3,
   Landmark,
   Calendar as CalendarIcon,
+  Bookmark,
+  BookmarkPlus,
+  Trash2,
+  FileSpreadsheet,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -34,10 +38,19 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { getReportsData } from "@/lib/reports.functions";
-import { REPORTS, REPORT_CATEGORIES, type ReportDef } from "@/lib/reports-catalog";
+import { REPORTS, REPORT_CATEGORIES, parseChartNumber, type ReportDef, type ReportOutput } from "@/lib/reports-catalog";
 import { exportReportToPDF } from "@/lib/reports-pdf";
+import { exportReportToCSV } from "@/lib/reports-csv";
 import { ReportChart } from "@/lib/reports-charts";
 
 export const Route = createFileRoute("/_authenticated/reports")({
@@ -78,6 +91,29 @@ function rangeFor(preset: Preset): { from: string; to: string } {
   return { from: d.toISOString().slice(0, 10), to };
 }
 
+// ---------- Saved presets ----------
+type SavedPreset = {
+  id: string;
+  name: string;
+  query: string;
+  category: string;
+  preset: Preset;
+  customFrom: string;
+  customTo: string;
+};
+const PRESET_KEY = "paisa.reports.presets.v1";
+
+function loadPresets(): SavedPreset[] {
+  try {
+    return JSON.parse(localStorage.getItem(PRESET_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function savePresets(list: SavedPreset[]) {
+  localStorage.setItem(PRESET_KEY, JSON.stringify(list));
+}
+
 function ReportsPage() {
   const dataFn = useServerFn(getReportsData);
   const [preset, setPreset] = useState<Preset>("ytd");
@@ -86,6 +122,11 @@ function ReportsPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("All");
   const [openReport, setOpenReport] = useState<ReportDef | null>(null);
+  const [drillLabel, setDrillLabel] = useState<string | null>(null);
+  const [presets, setPresetsState] = useState<SavedPreset[]>([]);
+
+  useEffect(() => setPresetsState(loadPresets()), []);
+  useEffect(() => setDrillLabel(null), [openReport]);
 
   const range = useMemo(() => {
     if (customFrom && customTo) return { from: customFrom, to: customTo };
@@ -114,14 +155,33 @@ function ReportsPage() {
 
   const output = useMemo(() => (openReport && data ? openReport.compute(data) : null), [openReport, data]);
 
-  const handleDownload = async (report: ReportDef) => {
+  // Apply drill-down filter to preview output (does not affect PDF/CSV of full report unless active).
+  const drilledOutput = useMemo<ReportOutput | null>(() => {
+    if (!output) return null;
+    if (!drillLabel || !output.chart) return output;
+    const xCol = output.chart.xCol;
+    const rows = output.rows.filter((r) => String(r[xCol] ?? "") === drillLabel);
+    return { ...output, rows, footer: undefined };
+  }, [output, drillLabel]);
+
+  const handleDownloadPDF = async (report: ReportDef, out?: ReportOutput) => {
     if (!data) {
       toast.error("Data still loading — try again in a moment.");
       return;
     }
-    const out = report.compute(data);
-    await exportReportToPDF(report, out, { from: range.from, to: range.to, owner: (data as any)?.profile?.display_name });
-    toast.success(`${report.name} downloaded`);
+    const o = out ?? report.compute(data);
+    await exportReportToPDF(report, o, { from: range.from, to: range.to, owner: (data as any)?.profile?.display_name });
+    toast.success(`${report.name} exported to PDF`);
+  };
+
+  const handleDownloadCSV = (report: ReportDef, out?: ReportOutput) => {
+    if (!data) {
+      toast.error("Data still loading — try again in a moment.");
+      return;
+    }
+    const o = out ?? report.compute(data);
+    exportReportToCSV(report, o, { from: range.from, to: range.to });
+    toast.success(`${report.name} exported to CSV`);
   };
 
   const handleDownloadAll = async () => {
@@ -138,26 +198,112 @@ function ReportsPage() {
     }
   };
 
+  // ---------- Preset actions ----------
+  const handleSavePreset = () => {
+    const name = window.prompt("Name this preset (e.g. 'Q1 spend review')");
+    if (!name?.trim()) return;
+    const next: SavedPreset = {
+      id: `${Date.now()}`,
+      name: name.trim(),
+      query,
+      category,
+      preset,
+      customFrom,
+      customTo,
+    };
+    const list = [next, ...presets].slice(0, 30);
+    savePresets(list);
+    setPresetsState(list);
+    toast.success(`Saved preset "${name.trim()}"`);
+  };
+  const applyPreset = (p: SavedPreset) => {
+    setQuery(p.query);
+    setCategory(p.category);
+    setPreset(p.preset);
+    setCustomFrom(p.customFrom);
+    setCustomTo(p.customTo);
+    toast.success(`Applied "${p.name}"`);
+  };
+  const deletePreset = (id: string) => {
+    const list = presets.filter((p) => p.id !== id);
+    savePresets(list);
+    setPresetsState(list);
+  };
+
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6 p-4 md:p-6">
+    <div className="mx-auto max-w-[1400px] space-y-4 p-3 sm:space-y-6 sm:p-4 md:p-6">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Reports</h1>
-          <p className="text-sm text-muted-foreground">
-            {REPORTS.length}+ prebuilt reports across cash flow, spending, wealth, and tax — each downloadable as a
-            polished PDF.
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:flex sm:flex-wrap sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Reports</h1>
+          <p className="text-xs text-muted-foreground sm:text-sm">
+            {REPORTS.length}+ prebuilt reports — download as PDF or CSV, save filter presets, drill into any chart.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {/* Presets menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9">
+                <Bookmark className="mr-1.5 h-4 w-4" />
+                Presets
+                {presets.length > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">
+                    {presets.length}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuLabel className="text-xs">Saved filter presets</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={handleSavePreset}>
+                <BookmarkPlus className="mr-2 h-4 w-4" /> Save current as preset…
+              </DropdownMenuItem>
+              {presets.length > 0 && <DropdownMenuSeparator />}
+              {presets.length === 0 ? (
+                <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                  No presets yet. Save filters + date ranges to re-run in one click.
+                </div>
+              ) : (
+                <div className="max-h-72 overflow-y-auto">
+                  {presets.map((p) => (
+                    <div
+                      key={p.id}
+                      className="group flex items-start gap-2 px-2 py-1.5 hover:bg-muted/60"
+                    >
+                      <button
+                        onClick={() => applyPreset(p)}
+                        className="flex-1 min-w-0 text-left"
+                      >
+                        <div className="truncate text-sm font-medium">{p.name}</div>
+                        <div className="truncate text-[10px] text-muted-foreground">
+                          {p.category} · {p.preset}
+                          {p.query ? ` · "${p.query}"` : ""}
+                          {p.customFrom && p.customTo ? ` · ${p.customFrom}→${p.customTo}` : ""}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => deletePreset(p.id)}
+                        className="opacity-0 transition-opacity group-hover:opacity-100"
+                        title="Delete preset"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <div className="flex items-center gap-1 rounded-lg border bg-card p-1">
-            <CalendarIcon className="ml-1.5 h-3.5 w-3.5 text-muted-foreground" />
+            <CalendarIcon className="ml-1.5 hidden h-3.5 w-3.5 text-muted-foreground sm:block" />
             {(["1m", "3m", "6m", "ytd", "1y", "all"] as Preset[]).map((p) => (
               <Button
                 key={p}
                 variant={preset === p && !customFrom ? "secondary" : "ghost"}
                 size="sm"
-                className="h-7 px-2.5 text-xs uppercase"
+                className="h-7 px-2 text-[11px] uppercase sm:px-2.5 sm:text-xs"
                 onClick={() => {
                   setPreset(p);
                   setCustomFrom("");
@@ -168,19 +314,21 @@ function ReportsPage() {
               </Button>
             ))}
           </div>
-          <Input
-            type="date"
-            value={customFrom}
-            onChange={(e) => setCustomFrom(e.target.value)}
-            className="h-9 w-[140px]"
-          />
-          <span className="text-xs text-muted-foreground">→</span>
-          <Input
-            type="date"
-            value={customTo}
-            onChange={(e) => setCustomTo(e.target.value)}
-            className="h-9 w-[140px]"
-          />
+          <div className="flex items-center gap-1">
+            <Input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="h-9 w-[130px] text-xs sm:w-[140px] sm:text-sm"
+            />
+            <span className="text-xs text-muted-foreground">→</span>
+            <Input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="h-9 w-[130px] text-xs sm:w-[140px] sm:text-sm"
+            />
+          </div>
           <Button size="sm" onClick={handleDownloadAll} disabled={!data}>
             <Download className="mr-1.5 h-4 w-4" />
             Export {filtered.length}
@@ -190,7 +338,7 @@ function ReportsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[240px] flex-1">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search reports…"
@@ -199,21 +347,23 @@ function ReportsPage() {
             className="pl-9"
           />
         </div>
-        <Tabs value={category} onValueChange={setCategory}>
-          <TabsList className="flex flex-wrap">
-            <TabsTrigger value="All">All</TabsTrigger>
-            {REPORT_CATEGORIES.map((c) => (
-              <TabsTrigger key={c} value={c}>
-                {c}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <ScrollArea className="max-w-full">
+          <Tabs value={category} onValueChange={setCategory}>
+            <TabsList className="flex flex-nowrap">
+              <TabsTrigger value="All">All</TabsTrigger>
+              {REPORT_CATEGORIES.map((c) => (
+                <TabsTrigger key={c} value={c} className="whitespace-nowrap">
+                  {c}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </ScrollArea>
       </div>
 
       {/* Report grid */}
       {isLoading && !data ? (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 9 }).map((_, i) => (
             <Skeleton key={i} className="h-32" />
           ))}
@@ -230,7 +380,7 @@ function ReportsPage() {
                   {list.length}
                 </Badge>
               </div>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {list.map((r) => (
                   <Card
                     key={r.id}
@@ -240,17 +390,32 @@ function ReportsPage() {
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between gap-2">
                         <CardTitle className="text-sm font-semibold leading-tight">{r.name}</CardTitle>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(r);
-                          }}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Download CSV"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadCSV(r);
+                            }}
+                          >
+                            <FileSpreadsheet className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title="Download PDF"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadPDF(r);
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -272,97 +437,140 @@ function ReportsPage() {
 
       {/* Preview sheet */}
       <Sheet open={!!openReport} onOpenChange={(o) => !o && setOpenReport(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl lg:max-w-4xl">
+        <SheetContent side="right" className="w-full overflow-y-auto p-4 sm:max-w-2xl sm:p-6 lg:max-w-4xl">
           <SheetHeader>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <SheetTitle>{openReport?.name}</SheetTitle>
-                <SheetDescription>{openReport?.description}</SheetDescription>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+              <div className="min-w-0">
+                <SheetTitle className="truncate">{openReport?.name}</SheetTitle>
+                <SheetDescription className="line-clamp-2">{openReport?.description}</SheetDescription>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {range.from} → {range.to}
+                  {drillLabel && (
+                    <>
+                      {" · filtered by "}
+                      <span className="font-medium text-primary">{drillLabel}</span>
+                    </>
+                  )}
                 </p>
               </div>
-              <Button size="sm" disabled={!data} onClick={() => openReport && handleDownload(openReport)}>
-                <Download className="mr-1.5 h-4 w-4" /> PDF
-              </Button>
+              <div className="flex shrink-0 gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!data}
+                  onClick={() => openReport && drilledOutput && handleDownloadCSV(openReport, drilledOutput)}
+                >
+                  <FileSpreadsheet className="mr-1.5 h-4 w-4" /> CSV
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!data}
+                  onClick={() => openReport && drilledOutput && handleDownloadPDF(openReport, drilledOutput)}
+                >
+                  <Download className="mr-1.5 h-4 w-4" /> PDF
+                </Button>
+              </div>
             </div>
           </SheetHeader>
           <div className="mt-4">
-            {!output ? (
+            {!drilledOutput ? (
               <Skeleton className="h-64" />
             ) : (
               <>
-                {output.kpis && output.kpis.length > 0 && (
+                {output?.kpis && output.kpis.length > 0 && (
                   <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
                     {output.kpis.map((k) => (
                       <div key={k.label} className="rounded-lg border bg-muted/30 p-3">
                         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k.label}</div>
-                        <div className="mt-1 font-display text-lg font-semibold">{k.value}</div>
+                        <div className="mt-1 font-display text-base font-semibold sm:text-lg">{k.value}</div>
                       </div>
                     ))}
                   </div>
                 )}
-                {(output.chart || output.chart2) && (
-                  <div className="mb-4 grid gap-3 md:grid-cols-2">
-                    {output.chart && <ReportChart output={output} hint={output.chart} height={280} />}
-                    {output.chart2 && <ReportChart output={output} hint={output.chart2} height={280} />}
+                {output && (output.chart || output.chart2) && (
+                  <div className="mb-4 grid gap-3 lg:grid-cols-2">
+                    {output.chart && (
+                      <ReportChart
+                        output={output}
+                        hint={output.chart}
+                        height={260}
+                        activeLabel={drillLabel}
+                        onSegmentClick={setDrillLabel}
+                      />
+                    )}
+                    {output.chart2 && (
+                      <ReportChart
+                        output={output}
+                        hint={output.chart2}
+                        height={260}
+                        activeLabel={drillLabel}
+                      />
+                    )}
                   </div>
                 )}
-                {output.rows.length === 0 ? (
+                {drilledOutput.rows.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    {output.emptyMessage ?? "No data for this period."}
+                    {drillLabel
+                      ? `No rows match "${drillLabel}". Clear the filter to see the full report.`
+                      : (drilledOutput.emptyMessage ?? "No data for this period.")}
                   </div>
                 ) : (
-                  <ScrollArea className="h-[calc(100vh-260px)] rounded-lg border">
-                    <table className="w-full text-sm">
-                      <thead className="sticky top-0 bg-muted/60 backdrop-blur">
-                        <tr>
-                          {output.columns.map((c, i) => (
-                            <th
-                              key={i}
-                              className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground ${
-                                output.numericColumns?.includes(i) ? "text-right" : ""
-                              }`}
-                            >
-                              {c}
-                            </th>
+                  <ScrollArea className="max-h-[calc(100vh-320px)] rounded-lg border">
+                    <div className="min-w-[520px]">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-muted/60 backdrop-blur">
+                          <tr>
+                            {drilledOutput.columns.map((c, i) => (
+                              <th
+                                key={i}
+                                className={`px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground ${
+                                  drilledOutput.numericColumns?.includes(i) ? "text-right" : ""
+                                }`}
+                              >
+                                {c}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {drilledOutput.rows.slice(0, 500).map((r, ri) => (
+                            <tr key={ri} className="border-t hover:bg-muted/30">
+                              {r.map((c, ci) => (
+                                <td
+                                  key={ci}
+                                  className={`px-3 py-2 ${
+                                    drilledOutput.numericColumns?.includes(ci)
+                                      ? "text-right font-mono tabular-nums"
+                                      : ""
+                                  }`}
+                                >
+                                  {String(c)}
+                                </td>
+                              ))}
+                            </tr>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {output.rows.slice(0, 500).map((r, ri) => (
-                          <tr key={ri} className="border-t hover:bg-muted/30">
-                            {r.map((c, ci) => (
-                              <td
-                                key={ci}
-                                className={`px-3 py-2 ${
-                                  output.numericColumns?.includes(ci) ? "text-right font-mono tabular-nums" : ""
-                                }`}
-                              >
-                                {String(c)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                        {output.footer && (
-                          <tr className="border-t bg-muted/40 font-semibold">
-                            {output.footer.map((c, ci) => (
-                              <td
-                                key={ci}
-                                className={`px-3 py-2 ${
-                                  output.numericColumns?.includes(ci) ? "text-right font-mono tabular-nums" : ""
-                                }`}
-                              >
-                                {String(c)}
-                              </td>
-                            ))}
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                    {output.rows.length > 500 && (
+                          {drilledOutput.footer && (
+                            <tr className="border-t bg-muted/40 font-semibold">
+                              {drilledOutput.footer.map((c, ci) => (
+                                <td
+                                  key={ci}
+                                  className={`px-3 py-2 ${
+                                    drilledOutput.numericColumns?.includes(ci)
+                                      ? "text-right font-mono tabular-nums"
+                                      : ""
+                                  }`}
+                                >
+                                  {String(c)}
+                                </td>
+                              ))}
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {drilledOutput.rows.length > 500 && (
                       <div className="border-t p-3 text-center text-xs text-muted-foreground">
-                        Preview limited to 500 rows. The PDF export includes all {output.rows.length}.
+                        Preview limited to 500 rows. The export includes all {drilledOutput.rows.length}.
                       </div>
                     )}
                   </ScrollArea>
@@ -375,3 +583,6 @@ function ReportsPage() {
     </div>
   );
 }
+
+// keep import used
+void parseChartNumber;
