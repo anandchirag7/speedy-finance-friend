@@ -270,6 +270,28 @@ export function BillFormDialog({ open, onOpenChange, bill }: Props) {
             <Switch checked={f.is_active} onCheckedChange={(v) => setF({ ...f, is_active: v })} />
           </div>
 
+          <div className="md:col-span-2 rounded-lg border p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">WhatsApp reminders</div>
+                <div className="text-xs text-muted-foreground">Send a message on each configured reminder day.</div>
+              </div>
+              <Switch checked={f.whatsapp_enabled} onCheckedChange={(v) => setF({ ...f, whatsapp_enabled: v })} />
+            </div>
+            {f.whatsapp_enabled && (
+              <div className="space-y-1.5">
+                <Label>Override number (optional)</Label>
+                <Input
+                  value={f.whatsapp_number ?? ""}
+                  onChange={(e) => setF({ ...f, whatsapp_number: e.target.value })}
+                  placeholder="+91 98xxxxxxxx — leave empty to use your profile number"
+                />
+                <div className="text-xs text-muted-foreground">Include country code. Falls back to your profile WhatsApp number.</div>
+              </div>
+            )}
+          </div>
+
+
           <div className="space-y-1.5 md:col-span-2">
             <Label>Notes</Label>
             <Textarea value={f.notes ?? ""} onChange={(e) => setF({ ...f, notes: e.target.value })} rows={3} />
