@@ -231,7 +231,7 @@ function BillsPage() {
 
       <BillFormDialog open={showForm} onOpenChange={setShowForm} bill={editing} />
       <MarkPaidDialog open={!!payTarget} onOpenChange={(o) => !o && setPayTarget(null)} bill={payTarget} />
-      <DetailSheet bill={detail} onOpenChange={(o) => !o && setDetail(null)}
+      <DetailSheet bill={detail} onOpenChange={(o: boolean) => !o && setDetail(null)}
         onEdit={(b: any) => { setDetail(null); setEditing(b); setShowForm(true); }}
         onPay={(b: any) => { setDetail(null); setPayTarget(b); }} />
     </TooltipProvider>
