@@ -114,29 +114,28 @@ function ReportsPage() {
 
   const output = useMemo(() => (openReport && data ? openReport.compute(data) : null), [openReport, data]);
 
-  const handleDownload = (report: ReportDef) => {
+  const handleDownload = async (report: ReportDef) => {
     if (!data) {
       toast.error("Data still loading — try again in a moment.");
       return;
     }
     const out = report.compute(data);
-    exportReportToPDF(report, out, { from: range.from, to: range.to, owner: (data as any)?.profile?.display_name });
+    await exportReportToPDF(report, out, { from: range.from, to: range.to, owner: (data as any)?.profile?.display_name });
     toast.success(`${report.name} downloaded`);
   };
 
-  const handleDownloadAll = () => {
+  const handleDownloadAll = async () => {
     if (!data) return;
-    filtered.forEach((r, i) => {
-      setTimeout(() => {
-        const out = r.compute(data);
-        exportReportToPDF(r, out, {
-          from: range.from,
-          to: range.to,
-          owner: (data as any)?.profile?.display_name,
-        });
-      }, i * 250);
-    });
     toast.success(`Exporting ${filtered.length} reports…`);
+    for (const r of filtered) {
+      const out = r.compute(data);
+      await exportReportToPDF(r, out, {
+        from: range.from,
+        to: range.to,
+        owner: (data as any)?.profile?.display_name,
+      });
+      await new Promise((res) => setTimeout(res, 100));
+    }
   };
 
   return (
