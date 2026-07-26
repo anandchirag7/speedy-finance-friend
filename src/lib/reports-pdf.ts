@@ -1,14 +1,16 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { ReportDef, ReportOutput } from "./reports-catalog";
+import { renderChartToPngDataUrl } from "./reports-charts";
 
-export function exportReportToPDF(
+export async function exportReportToPDF(
   report: ReportDef,
   output: ReportOutput,
   meta: { from: string; to: string; owner?: string | null },
 ) {
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
 
   // Header band
   doc.setFillColor(15, 23, 42);
@@ -44,6 +46,26 @@ export function exportReportToPDF(
       doc.setFont("helvetica", "normal");
     });
     y += 72;
+  }
+
+  // Chart(s)
+  const hints = [output.chart, output.chart2].filter(Boolean) as NonNullable<typeof output.chart>[];
+  for (const hint of hints) {
+    try {
+      const dataUrl = await renderChartToPngDataUrl(output, hint, 1600, 700);
+      if (dataUrl) {
+        const chartW = pageWidth - 80;
+        const chartH = chartW * (700 / 1600);
+        if (y + chartH > pageHeight - 60) {
+          doc.addPage();
+          y = 60;
+        }
+        doc.addImage(dataUrl, "PNG", 40, y, chartW, chartH);
+        y += chartH + 16;
+      }
+    } catch {
+      // ignore chart render failures
+    }
   }
 
   if (output.rows.length === 0) {
