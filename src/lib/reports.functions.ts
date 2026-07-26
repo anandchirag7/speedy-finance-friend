@@ -65,7 +65,7 @@ export const getReportsData = createServerFn({ method: "GET" })
         .gte("snapshot_date", from)
         .lte("snapshot_date", to)
         .order("snapshot_date", { ascending: true }),
-      s.from("profiles").select("display_name, currency").eq("id", context.userId).maybeSingle(),
+      s.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
     ]);
 
     return {
