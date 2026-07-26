@@ -159,6 +159,63 @@ export type Database = {
           },
         ]
       }
+      bill_reminder_sends: {
+        Row: {
+          bill_id: string
+          channel: string
+          days_before: number
+          due_date: string
+          error: string | null
+          household_id: string
+          id: string
+          provider_message_id: string | null
+          recipient: string | null
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          bill_id: string
+          channel?: string
+          days_before: number
+          due_date: string
+          error?: string | null
+          household_id: string
+          id?: string
+          provider_message_id?: string | null
+          recipient?: string | null
+          sent_at?: string
+          status?: string
+        }
+        Update: {
+          bill_id?: string
+          channel?: string
+          days_before?: number
+          due_date?: string
+          error?: string | null
+          household_id?: string
+          id?: string
+          provider_message_id?: string | null
+          recipient?: string | null
+          sent_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bill_reminder_sends_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bill_reminder_sends_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bills: {
         Row: {
           account_id: string | null
@@ -186,6 +243,8 @@ export type Database = {
           tags: string[]
           updated_at: string
           url: string | null
+          whatsapp_enabled: boolean
+          whatsapp_number: string | null
         }
         Insert: {
           account_id?: string | null
@@ -213,6 +272,8 @@ export type Database = {
           tags?: string[]
           updated_at?: string
           url?: string | null
+          whatsapp_enabled?: boolean
+          whatsapp_number?: string | null
         }
         Update: {
           account_id?: string | null
@@ -240,6 +301,8 @@ export type Database = {
           tags?: string[]
           updated_at?: string
           url?: string | null
+          whatsapp_enabled?: boolean
+          whatsapp_number?: string | null
         }
         Relationships: [
           {
@@ -1167,6 +1230,8 @@ export type Database = {
           number_format: string
           updated_at: string
           use_lakh_crore: boolean
+          whatsapp_number: string | null
+          whatsapp_reminders_enabled: boolean
         }
         Insert: {
           app_lock_enabled?: boolean
@@ -1178,6 +1243,8 @@ export type Database = {
           number_format?: string
           updated_at?: string
           use_lakh_crore?: boolean
+          whatsapp_number?: string | null
+          whatsapp_reminders_enabled?: boolean
         }
         Update: {
           app_lock_enabled?: boolean
@@ -1189,6 +1256,8 @@ export type Database = {
           number_format?: string
           updated_at?: string
           use_lakh_crore?: boolean
+          whatsapp_number?: string | null
+          whatsapp_reminders_enabled?: boolean
         }
         Relationships: [
           {
