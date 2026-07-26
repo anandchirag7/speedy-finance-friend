@@ -1540,3 +1540,263 @@ function PayeeFormDialog({
     </Dialog>
   );
 }
+
+/* ---------- Payee rules (per-type overrides) ---------- */
+
+function PayeeRulesSection({
+  payeeId,
+  defaultTxnType,
+  cats,
+  accts,
+}: {
+  payeeId: string;
+  defaultTxnType: string;
+  cats: any[];
+  accts: any[];
+}) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listPayeeRules);
+  const createFn = useServerFn(createPayeeRule);
+  const updateFn = useServerFn(updatePayeeRule);
+  const deleteFn = useServerFn(deletePayeeRule);
+
+  const rulesQ = useQuery({
+    queryKey: ["payee_rules", payeeId],
+    queryFn: () => listFn({ data: { payee_id: payeeId } }),
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["payee_rules", payeeId] });
+
+  const createMut = useMutation({
+    mutationFn: (input: any) => createFn({ data: input }),
+    onSuccess: () => { invalidate(); toast.success("Rule added"); },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to add rule"),
+  });
+  const updateMut = useMutation({
+    mutationFn: (input: { id: string; patch: any }) => updateFn({ data: input }),
+    onSuccess: () => invalidate(),
+    onError: (e: any) => toast.error(e?.message ?? "Failed to update rule"),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteFn({ data: { id } }),
+    onSuccess: () => { invalidate(); toast.success("Rule removed"); },
+  });
+
+  const rules = rulesQ.data ?? [];
+  const usedTypes = new Set(rules.map((r: any) => r.txn_type));
+  const nextType =
+    TXN_TYPES.find((t) => !usedTypes.has(t.value))?.value ??
+    (defaultTxnType as string) ??
+    "expense";
+
+  return (
+    <Section title="Type-specific rules">
+      <div className="space-y-2">
+        <p className="text-xs text-slate-500">
+          Override the payee's defaults per transaction type. The matching rule (by type, and amount range if set) is
+          applied when this payee appears on a transaction. Highest priority wins.
+        </p>
+
+        {rulesQ.isLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : rules.length === 0 ? (
+          <div className="rounded-md border border-dashed bg-slate-50/60 px-3 py-4 text-center text-xs text-slate-500">
+            No per-type rules yet. Add one to handle refunds, transfers, or amount-based variants.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {rules.map((r: any) => (
+              <RuleRow
+                key={r.id}
+                rule={r}
+                cats={cats}
+                accts={accts}
+                onPatch={(patch) => updateMut.mutate({ id: r.id, patch })}
+                onDelete={() => deleteMut.mutate(r.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="pt-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              createMut.mutate({
+                payee_id: payeeId,
+                txn_type: nextType,
+                category_id: null,
+                transfer_account_id: null,
+                memo: null,
+                tags: [],
+                default_amount: null,
+                min_amount: null,
+                max_amount: null,
+                priority: 0,
+                is_active: true,
+              })
+            }
+            disabled={createMut.isPending}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" /> Add rule
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function RuleRow({
+  rule,
+  cats,
+  accts,
+  onPatch,
+  onDelete,
+}: {
+  rule: any;
+  cats: any[];
+  accts: any[];
+  onPatch: (patch: any) => void;
+  onDelete: () => void;
+}) {
+  const [draft, setDraft] = useState<Record<string, any>>({});
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPatchRef = useRef(onPatch);
+  useEffect(() => { onPatchRef.current = onPatch; }, [onPatch]);
+
+  const flush = (patch: Record<string, any>) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      onPatchRef.current(patch);
+      setDraft({});
+    }, 500);
+  };
+
+  const set = (patch: any) => {
+    setDraft((d) => {
+      const merged = { ...d, ...patch };
+      flush(merged);
+      return merged;
+    });
+  };
+
+  const setImmediate = (patch: any) => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    onPatchRef.current({ ...draft, ...patch });
+    setDraft({});
+  };
+
+  const v = { ...rule, ...draft };
+  const type = TXN_TYPES.find((t) => t.value === v.txn_type) ?? TXN_TYPES[0];
+  const TIcon = type.icon;
+  const kind = v.txn_type === "income" || v.txn_type === "deposit" ? "income" : v.txn_type === "transfer" ? "transfer" : "expense";
+  const relevantCats = cats.filter((c: any) => !c.kind || c.kind === kind || kind === "transfer");
+
+  return (
+    <div className={cn("rounded-md border bg-white p-3", !v.is_active && "opacity-60")}>
+      <div className="mb-2 flex items-center gap-2">
+        <TIcon className={cn("h-4 w-4", type.tone)} />
+        <Select value={v.txn_type} onValueChange={(val) => setImmediate({ txn_type: val })}>
+          <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {TXN_TYPES.map((t) => (
+              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="ml-auto flex items-center gap-2">
+          <Switch checked={!!v.is_active} onCheckedChange={(val) => setImmediate({ is_active: val })} />
+          <span className="text-xs text-slate-500">{v.is_active ? "Active" : "Off"}</span>
+          <Button variant="ghost" size="icon" onClick={onDelete} aria-label="Delete rule">
+            <Trash2 className="h-4 w-4 text-rose-500" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {v.txn_type === "transfer" ? (
+          <Field label="Transfer account">
+            <Select
+              value={v.transfer_account_id ?? "none"}
+              onValueChange={(val) => setImmediate({ transfer_account_id: val === "none" ? null : val })}
+            >
+              <SelectTrigger className="h-8"><SelectValue placeholder="Select account" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— None —</SelectItem>
+                {accts.map((a: any) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        ) : (
+          <Field label="Category">
+            <Select
+              value={v.category_id ?? "none"}
+              onValueChange={(val) => setImmediate({ category_id: val === "none" ? null : val })}
+            >
+              <SelectTrigger className="h-8"><SelectValue placeholder="Select category" /></SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectItem value="none">— None —</SelectItem>
+                {relevantCats.map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+
+        <Field label="Default amount">
+          <Input
+            className="h-8"
+            type="number"
+            inputMode="decimal"
+            value={v.default_amount ?? ""}
+            onChange={(e) => set({ default_amount: e.target.value ? Number(e.target.value) : null })}
+            placeholder="0.00"
+          />
+        </Field>
+
+        <Field label="Min amount">
+          <Input
+            className="h-8"
+            type="number"
+            value={v.min_amount ?? ""}
+            onChange={(e) => set({ min_amount: e.target.value ? Number(e.target.value) : null })}
+            placeholder="No minimum"
+          />
+        </Field>
+
+        <Field label="Max amount">
+          <Input
+            className="h-8"
+            type="number"
+            value={v.max_amount ?? ""}
+            onChange={(e) => set({ max_amount: e.target.value ? Number(e.target.value) : null })}
+            placeholder="No maximum"
+          />
+        </Field>
+
+        <Field label="Priority">
+          <Input
+            className="h-8"
+            type="number"
+            value={v.priority ?? 0}
+            onChange={(e) => set({ priority: Number(e.target.value || 0) })}
+          />
+        </Field>
+
+        <Field label="Memo" className="sm:col-span-2">
+          <Input
+            className="h-8"
+            value={v.memo ?? ""}
+            onChange={(e) => set({ memo: e.target.value })}
+            placeholder="Optional note applied on match"
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
