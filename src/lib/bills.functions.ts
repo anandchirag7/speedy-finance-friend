@@ -38,6 +38,8 @@ const billShape = {
   min_amount: z.number().nullable().optional(),
   max_amount: z.number().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  whatsapp_enabled: z.boolean().default(true),
+  whatsapp_number: z.string().max(30).nullable().optional(),
 };
 
 function advanceDate(iso: string, recurrence: string): string {
