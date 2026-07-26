@@ -82,45 +82,164 @@ export type Database = {
           },
         ]
       }
-      bills: {
+      bill_payments: {
         Row: {
           account_id: string | null
           amount: number | null
-          category_id: string | null
+          bill_id: string
           created_at: string
+          created_by: string | null
           due_date: string
           household_id: string
           id: string
-          name: string
           notes: string | null
-          recurrence: string
+          paid_date: string | null
           status: string
+          transaction_id: string | null
+          updated_at: string
         }
         Insert: {
           account_id?: string | null
           amount?: number | null
-          category_id?: string | null
+          bill_id: string
           created_at?: string
+          created_by?: string | null
           due_date: string
           household_id: string
           id?: string
-          name: string
           notes?: string | null
-          recurrence?: string
+          paid_date?: string | null
           status?: string
+          transaction_id?: string | null
+          updated_at?: string
         }
         Update: {
           account_id?: string | null
           amount?: number | null
-          category_id?: string | null
+          bill_id?: string
           created_at?: string
+          created_by?: string | null
           due_date?: string
           household_id?: string
           id?: string
+          notes?: string | null
+          paid_date?: string | null
+          status?: string
+          transaction_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bill_payments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bill_payments_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bill_payments_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bill_payments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bills: {
+        Row: {
+          account_id: string | null
+          amount: number | null
+          auto_pay: boolean
+          category_id: string | null
+          created_at: string
+          currency: string
+          due_date: string
+          end_date: string | null
+          household_id: string
+          id: string
+          is_active: boolean
+          is_estimated: boolean
+          last_paid_on: string | null
+          max_amount: number | null
+          min_amount: number | null
+          name: string
+          notes: string | null
+          payee_id: string | null
+          priority: string
+          recurrence: string
+          reminder_days: number[]
+          status: string
+          tags: string[]
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          amount?: number | null
+          auto_pay?: boolean
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          due_date: string
+          end_date?: string | null
+          household_id: string
+          id?: string
+          is_active?: boolean
+          is_estimated?: boolean
+          last_paid_on?: string | null
+          max_amount?: number | null
+          min_amount?: number | null
+          name: string
+          notes?: string | null
+          payee_id?: string | null
+          priority?: string
+          recurrence?: string
+          reminder_days?: number[]
+          status?: string
+          tags?: string[]
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          amount?: number | null
+          auto_pay?: boolean
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          due_date?: string
+          end_date?: string | null
+          household_id?: string
+          id?: string
+          is_active?: boolean
+          is_estimated?: boolean
+          last_paid_on?: string | null
+          max_amount?: number | null
+          min_amount?: number | null
           name?: string
           notes?: string | null
+          payee_id?: string | null
+          priority?: string
           recurrence?: string
+          reminder_days?: number[]
           status?: string
+          tags?: string[]
+          updated_at?: string
+          url?: string | null
         }
         Relationships: [
           {
@@ -142,6 +261,13 @@ export type Database = {
             columns: ["household_id"]
             isOneToOne: false
             referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bills_payee_id_fkey"
+            columns: ["payee_id"]
+            isOneToOne: false
+            referencedRelation: "memorized_payees"
             referencedColumns: ["id"]
           },
         ]
