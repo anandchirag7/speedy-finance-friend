@@ -341,6 +341,17 @@ export function ReportChart({
                 </Bar>
               );
             })}
+            {activeCompareKeys.map((k) => {
+              const i = compareKeys.indexOf(k);
+              return (
+                <Bar
+                  key={k}
+                  dataKey={k}
+                  fill={PALETTE[i % PALETTE.length]}
+                  fillOpacity={0.4}
+                  radius={[3, 3, 0, 0]}
+                />
+              );
           </BarChart>
         )}
       </ResponsiveContainer>
