@@ -873,6 +873,7 @@ export type Database = {
           account_id: string | null
           address: string | null
           ai_suggestions: boolean
+          aliases: string[]
           amount_tolerance_pct: number | null
           apply_to_downloaded: boolean
           apply_to_import: boolean
@@ -904,6 +905,7 @@ export type Database = {
           is_recurring: boolean
           last_used_at: string | null
           locked: boolean
+          match_tokens: string[]
           max_amount: number | null
           memo: string | null
           merchant: string
@@ -932,6 +934,7 @@ export type Database = {
           account_id?: string | null
           address?: string | null
           ai_suggestions?: boolean
+          aliases?: string[]
           amount_tolerance_pct?: number | null
           apply_to_downloaded?: boolean
           apply_to_import?: boolean
@@ -963,6 +966,7 @@ export type Database = {
           is_recurring?: boolean
           last_used_at?: string | null
           locked?: boolean
+          match_tokens?: string[]
           max_amount?: number | null
           memo?: string | null
           merchant: string
@@ -991,6 +995,7 @@ export type Database = {
           account_id?: string | null
           address?: string | null
           ai_suggestions?: boolean
+          aliases?: string[]
           amount_tolerance_pct?: number | null
           apply_to_downloaded?: boolean
           apply_to_import?: boolean
@@ -1022,6 +1027,7 @@ export type Database = {
           is_recurring?: boolean
           last_used_at?: string | null
           locked?: boolean
+          match_tokens?: string[]
           max_amount?: number | null
           memo?: string | null
           merchant?: string
@@ -1716,6 +1722,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _match_tokens_for_name: { Args: { s: string }; Returns: string[] }
+      _normalize_desc_for_cluster: { Args: { s: string }; Returns: string }
       has_household_access: {
         Args: { _household_id: string }
         Returns: boolean
