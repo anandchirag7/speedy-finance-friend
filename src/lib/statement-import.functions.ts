@@ -283,78 +283,87 @@ function tokens(s: string): string[] {
     .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !PAYMENT_NOISE.has(t));
 }
 
-function findExistingPayee(desc: string, existing: Array<{ name: string; key: string; tokens: string[] }>): string | null {
-  const descKey = payeeKey(desc);
-  const descTokens = new Set(tokens(desc));
-  let best: { name: string; score: number } | null = null;
+type ExistingPayeeRich = { name: string; aliases: string[] };
+
+type MatcherIndex = {
+  fingerprintMap: Map<string, string>; // normalized alias -> payee name
+  tokenIndex: Map<string, Set<string>>; // token -> candidate payee names
+  byName: Map<string, { name: string; key: string; tokens: string[] }>;
+};
+
+function buildMatcherIndex(existing: ExistingPayeeRich[]): MatcherIndex {
+  const fingerprintMap = new Map<string, string>();
+  const tokenIndex = new Map<string, Set<string>>();
+  const byName = new Map<string, { name: string; key: string; tokens: string[] }>();
   for (const p of existing) {
-    if (!p.key) continue;
+    const name = p.name;
+    if (!name) continue;
+    const nameTokens = tokens(name);
+    const key = payeeKey(name);
+    byName.set(name, { name, key, tokens: nameTokens });
+    // seed tokens from name
+    for (const t of nameTokens) {
+      let set = tokenIndex.get(t);
+      if (!set) { set = new Set(); tokenIndex.set(t, set); }
+      set.add(name);
+    }
+    // seed fingerprints + tokens from aliases
+    for (const a of p.aliases ?? []) {
+      const fp = normalizeDescForCluster(a);
+      if (fp) fingerprintMap.set(fp, name);
+      for (const t of tokens(a)) {
+        let set = tokenIndex.get(t);
+        if (!set) { set = new Set(); tokenIndex.set(t, set); }
+        set.add(name);
+      }
+    }
+  }
+  return { fingerprintMap, tokenIndex, byName };
+}
+
+function matchExistingPayee(desc: string, idx: MatcherIndex): string | null {
+  // Stage 1: exact fingerprint hit — fastest, and handles "same statement next month".
+  const fp = normalizeDescForCluster(desc);
+  if (fp && idx.fingerprintMap.has(fp)) return idx.fingerprintMap.get(fp)!;
+
+  // Stage 2: inverted-index candidates only.
+  const descTokens = tokens(desc);
+  if (!descTokens.length) return null;
+  const candidates = new Set<string>();
+  for (const t of descTokens) {
+    const s = idx.tokenIndex.get(t);
+    if (s) for (const n of s) candidates.add(n);
+    if (candidates.size > 32) break; // cap
+  }
+  if (!candidates.size) return null;
+
+  const descKey = payeeKey(desc);
+  const descTokenSet = new Set(descTokens);
+  let best: { name: string; score: number } | null = null;
+  for (const name of candidates) {
+    const p = idx.byName.get(name);
+    if (!p || !p.key) continue;
     if (descKey.includes(p.key) || p.key.includes(descKey)) return p.name;
-    const overlap = p.tokens.filter((t) => descTokens.has(t)).length;
+    const overlap = p.tokens.filter((t) => descTokenSet.has(t)).length;
     const score = overlap / Math.max(1, p.tokens.length);
     if (overlap > 0 && score > (best?.score ?? 0)) best = { name: p.name, score };
   }
   return best && best.score >= 0.67 ? best.name : null;
 }
 
-function cleanPayeeName(desc: string): string {
-  const withHandlesExpanded = comparable(desc).replace(/\b([A-Z0-9._-]{3,})@[A-Z0-9._-]+\b/g, " $1 ");
-  const segments = withHandlesExpanded
-    .split(/[\/|*:_\-]+/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  let best = "";
-  let bestScore = -1;
-  for (const segment of segments.length ? segments : [withHandlesExpanded]) {
-    const ts = tokens(segment);
-    if (!ts.length) continue;
-    const alpha = ts.filter((t) => /[A-Z]/.test(t)).length;
-    const score = alpha * 3 + Math.min(ts.join(" ").length, 24) - (segment.match(/\d/g)?.length ?? 0);
-    if (score > bestScore) {
-      bestScore = score;
-      best = ts.slice(0, 4).join(" ");
-    }
-  }
-
-  if (!best) best = tokens(normalizeDescForCluster(desc)).slice(0, 4).join(" ");
-  return titleCase(best || desc.slice(0, 60)).slice(0, 80);
-}
-
-function guessCategory(name: string, descriptions: string[], categories: Array<{ name: string; kind: string }>): string {
-  const haystack = comparable(`${name} ${descriptions.join(" ")}`);
-  const categoryNames = categories.map((c) => c.name);
-  for (const hint of CATEGORY_HINTS) {
-    if (!hint.words.some((w) => haystack.includes(w))) continue;
-    const match = categoryNames.find((cat) => hint.categories.some((target) => cat.toLowerCase().includes(target.toLowerCase())));
-    if (match) return match;
-  }
-  return "";
-}
-
-function inferType(descriptions: string[], typeByDesc: Map<string, "expense" | "income" | "transfer">): "expense" | "income" | "transfer" {
-  const counts = { expense: 0, income: 0, transfer: 0 };
-  for (const d of descriptions) counts[typeByDesc.get(d) ?? "expense"]++;
-  if (counts.income > counts.expense && counts.income >= counts.transfer) return "income";
-  if (counts.transfer > counts.expense && counts.transfer >= counts.income) return "transfer";
-  const haystack = comparable(descriptions.join(" "));
-  const hinted = CATEGORY_HINTS.find((h) => h.type && h.words.some((w) => haystack.includes(w)))?.type;
-  return hinted ?? "expense";
-}
-
 function clusterPayeesFast(
   descriptions: string[],
   categories: Array<{ name: string; kind: string }>,
-  existingPayees: string[],
+  existingPayees: ExistingPayeeRich[],
   typeByDesc = new Map<string, "expense" | "income" | "transfer">(),
 ): Promise<Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>> {
   if (!descriptions.length) return Promise.resolve([]);
 
-  const existingIndex = existingPayees.map((name) => ({ name, key: payeeKey(name), tokens: tokens(name) }));
+  const idx = buildMatcherIndex(existingPayees);
   const groups = new Map<string, { name: string; descriptions: Set<string>; isExisting: boolean }>();
 
   for (const d of descriptions) {
-    const existing = findExistingPayee(d, existingIndex);
+    const existing = matchExistingPayee(d, idx);
     const name = existing ?? cleanPayeeName(d);
     const key = payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
     const current = groups.get(key);
@@ -376,14 +385,15 @@ function clusterPayeesFast(
   return Promise.resolve(Array.from(groups.values()).map((v) => {
     const descs = Array.from(v.descriptions);
     return {
-    name: v.name,
+      name: v.name,
       descriptions: descs,
       suggestedCategory: guessCategory(v.name, descs, categories),
       type: inferType(descs, typeByDesc),
-    isExisting: v.isExisting,
+      isExisting: v.isExisting,
     };
   }).sort((a, b) => b.descriptions.length - a.descriptions.length || a.name.localeCompare(b.name)));
 }
+
 
 // ---------- PDF: still needs AI for extraction ----------
 
