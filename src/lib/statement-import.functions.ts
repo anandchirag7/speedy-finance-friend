@@ -283,20 +283,6 @@ function tokens(s: string): string[] {
     .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !PAYMENT_NOISE.has(t));
 }
 
-function findExistingPayee(desc: string, existing: Array<{ name: string; key: string; tokens: string[] }>): string | null {
-  const descKey = payeeKey(desc);
-  const descTokens = new Set(tokens(desc));
-  let best: { name: string; score: number } | null = null;
-  for (const p of existing) {
-    if (!p.key) continue;
-    if (descKey.includes(p.key) || p.key.includes(descKey)) return p.name;
-    const overlap = p.tokens.filter((t) => descTokens.has(t)).length;
-    const score = overlap / Math.max(1, p.tokens.length);
-    if (overlap > 0 && score > (best?.score ?? 0)) best = { name: p.name, score };
-  }
-  return best && best.score >= 0.67 ? best.name : null;
-}
-
 function cleanPayeeName(desc: string): string {
   const withHandlesExpanded = comparable(desc).replace(/\b([A-Z0-9._-]{3,})@[A-Z0-9._-]+\b/g, " $1 ");
   const segments = withHandlesExpanded
@@ -342,19 +328,88 @@ function inferType(descriptions: string[], typeByDesc: Map<string, "expense" | "
   return hinted ?? "expense";
 }
 
+
+type ExistingPayeeRich = { name: string; aliases: string[] };
+
+type MatcherIndex = {
+  fingerprintMap: Map<string, string>; // normalized alias -> payee name
+  tokenIndex: Map<string, Set<string>>; // token -> candidate payee names
+  byName: Map<string, { name: string; key: string; tokens: string[] }>;
+};
+
+function buildMatcherIndex(existing: ExistingPayeeRich[]): MatcherIndex {
+  const fingerprintMap = new Map<string, string>();
+  const tokenIndex = new Map<string, Set<string>>();
+  const byName = new Map<string, { name: string; key: string; tokens: string[] }>();
+  for (const p of existing) {
+    const name = p.name;
+    if (!name) continue;
+    const nameTokens = tokens(name);
+    const key = payeeKey(name);
+    byName.set(name, { name, key, tokens: nameTokens });
+    // seed tokens from name
+    for (const t of nameTokens) {
+      let set = tokenIndex.get(t);
+      if (!set) { set = new Set(); tokenIndex.set(t, set); }
+      set.add(name);
+    }
+    // seed fingerprints + tokens from aliases
+    for (const a of p.aliases ?? []) {
+      const fp = normalizeDescForCluster(a);
+      if (fp) fingerprintMap.set(fp, name);
+      for (const t of tokens(a)) {
+        let set = tokenIndex.get(t);
+        if (!set) { set = new Set(); tokenIndex.set(t, set); }
+        set.add(name);
+      }
+    }
+  }
+  return { fingerprintMap, tokenIndex, byName };
+}
+
+function matchExistingPayee(desc: string, idx: MatcherIndex): string | null {
+  // Stage 1: exact fingerprint hit — fastest, and handles "same statement next month".
+  const fp = normalizeDescForCluster(desc);
+  if (fp && idx.fingerprintMap.has(fp)) return idx.fingerprintMap.get(fp)!;
+
+  // Stage 2: inverted-index candidates only.
+  const descTokens = tokens(desc);
+  if (!descTokens.length) return null;
+  const candidates = new Set<string>();
+  for (const t of descTokens) {
+    const s = idx.tokenIndex.get(t);
+    if (s) for (const n of s) candidates.add(n);
+    if (candidates.size > 32) break; // cap
+  }
+  if (!candidates.size) return null;
+
+  const descKey = payeeKey(desc);
+  const descTokenSet = new Set(descTokens);
+  let best: { name: string; score: number } | null = null;
+  for (const name of candidates) {
+    const p = idx.byName.get(name);
+    if (!p || !p.key) continue;
+    if (descKey.includes(p.key) || p.key.includes(descKey)) return p.name;
+    const overlap = p.tokens.filter((t) => descTokenSet.has(t)).length;
+    const score = overlap / Math.max(1, p.tokens.length);
+    if (overlap > 0 && score > (best?.score ?? 0)) best = { name: p.name, score };
+  }
+  return best && best.score >= 0.67 ? best.name : null;
+}
+
 function clusterPayeesFast(
   descriptions: string[],
   categories: Array<{ name: string; kind: string }>,
-  existingPayees: string[],
+  existingPayees: ExistingPayeeRich[],
   typeByDesc = new Map<string, "expense" | "income" | "transfer">(),
 ): Promise<Array<{ name: string; descriptions: string[]; suggestedCategory: string; type: "expense" | "income" | "transfer"; isExisting: boolean }>> {
   if (!descriptions.length) return Promise.resolve([]);
 
-  const existingIndex = existingPayees.map((name) => ({ name, key: payeeKey(name), tokens: tokens(name) }));
+  const idx = buildMatcherIndex(existingPayees);
   const groups = new Map<string, { name: string; descriptions: Set<string>; isExisting: boolean }>();
 
   for (const d of descriptions) {
-    const existing = findExistingPayee(d, existingIndex);
+    const existing = matchExistingPayee(d, idx);
     const name = existing ?? cleanPayeeName(d);
     const key = payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
     const current = groups.get(key);
@@ -376,14 +431,15 @@ function clusterPayeesFast(
   return Promise.resolve(Array.from(groups.values()).map((v) => {
     const descs = Array.from(v.descriptions);
     return {
-    name: v.name,
+      name: v.name,
       descriptions: descs,
       suggestedCategory: guessCategory(v.name, descs, categories),
       type: inferType(descs, typeByDesc),
-    isExisting: v.isExisting,
+      isExisting: v.isExisting,
     };
   }).sort((a, b) => b.descriptions.length - a.descriptions.length || a.name.localeCompare(b.name)));
 }
+
 
 // ---------- PDF: still needs AI for extraction ----------
 
@@ -550,7 +606,7 @@ export const clusterStatementPayees = createServerFn({ method: "POST" })
       .eq("household_id", householdId);
     const { data: existingPayeesRows } = await context.supabase
       .from("memorized_payees")
-      .select("merchant")
+      .select("merchant, aliases")
       .eq("household_id", householdId);
 
     const sourceDescriptions = data.transactions?.length
@@ -564,12 +620,16 @@ export const clusterStatementPayees = createServerFn({ method: "POST" })
     const clusters = await clusterPayeesFast(
       uniqueDescriptions,
       (cats ?? []).map((c: any) => ({ name: c.name, kind: c.kind })),
-      (existingPayeesRows ?? []).map((p: any) => p.merchant),
+      (existingPayeesRows ?? []).map((p: any) => ({
+        name: p.merchant,
+        aliases: Array.isArray(p.aliases) ? p.aliases : [],
+      })),
       typeByDesc,
     );
 
     return { payees: clusters };
   });
+
 
 
 const bulkInput = z.object({
@@ -596,7 +656,31 @@ const bulkInput = z.object({
       }),
     )
     .default([]),
+  // Map of merchant name -> confirmed raw descriptions to learn as aliases.
+  payeeAliases: z.record(z.string(), z.array(z.string())).default({}),
 });
+
+const MAX_ALIASES_PER_PAYEE = 50;
+
+function dedupeAliases(list: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of list) {
+    const fp = normalizeDescForCluster(raw);
+    if (!fp || seen.has(fp)) continue;
+    seen.add(fp);
+    out.push(fp);
+    if (out.length >= MAX_ALIASES_PER_PAYEE) break;
+  }
+  return out;
+}
+
+function matchTokensFor(name: string, aliases: string[]): string[] {
+  const bag = new Set<string>();
+  for (const t of tokens(name)) bag.add(t);
+  for (const a of aliases) for (const t of tokens(a)) bag.add(t);
+  return Array.from(bag);
+}
 
 export const bulkInsertTransactions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -604,18 +688,37 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
 
-    if (data.newPayees.length) {
-      const names = data.newPayees.map((p) => p.merchant);
-      const { data: existing } = await context.supabase
+    // ---- Payee alias learning ----
+    // Fetch every payee we might touch (new + those receiving new aliases) in one call.
+    const aliasKeys = Object.keys(data.payeeAliases ?? {}).map((k) => k.trim()).filter(Boolean);
+    const newPayeeNames = data.newPayees.map((p) => p.merchant.trim()).filter(Boolean);
+    const namesToLoad = Array.from(new Set([...aliasKeys, ...newPayeeNames]));
+
+    let existingByName = new Map<string, { id: string; aliases: string[]; match_tokens: string[] }>();
+    if (namesToLoad.length) {
+      const { data: existing, error: exErr } = await context.supabase
         .from("memorized_payees")
-        .select("merchant")
+        .select("id, merchant, aliases, match_tokens")
         .eq("household_id", householdId)
-        .in("merchant", names);
-      const existingSet = new Set((existing ?? []).map((r: any) => r.merchant));
-      const rows = data.newPayees
-        .filter((p) => !existingSet.has(p.merchant))
-        .map((p) => ({
-          merchant: p.merchant,
+        .in("merchant", namesToLoad);
+      if (exErr) throw exErr;
+      for (const p of existing ?? []) {
+        existingByName.set(p.merchant, {
+          id: p.id,
+          aliases: Array.isArray(p.aliases) ? p.aliases : [],
+          match_tokens: Array.isArray(p.match_tokens) ? p.match_tokens : [],
+        });
+      }
+    }
+
+    // Insert new payees (skip ones that already exist).
+    const insertRows = data.newPayees
+      .filter((p) => !existingByName.has(p.merchant.trim()))
+      .map((p) => {
+        const name = p.merchant.trim();
+        const seedAliases = dedupeAliases(data.payeeAliases[name] ?? []);
+        return {
+          merchant: name,
           category_id: p.category_id ?? null,
           txn_type: p.txn_type,
           household_id: householdId,
@@ -625,13 +728,43 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
           splits: [],
           restrict_account_ids: [],
           currency: "INR",
-        }));
-      if (rows.length) {
-        const { error } = await context.supabase.from("memorized_payees").insert(rows);
-        if (error) throw error;
+          aliases: seedAliases,
+          match_tokens: matchTokensFor(name, seedAliases),
+        };
+      });
+    if (insertRows.length) {
+      const { data: inserted, error } = await context.supabase
+        .from("memorized_payees")
+        .insert(insertRows)
+        .select("id, merchant, aliases, match_tokens");
+      if (error) throw error;
+      for (const p of inserted ?? []) {
+        existingByName.set(p.merchant, {
+          id: p.id,
+          aliases: Array.isArray(p.aliases) ? p.aliases : [],
+          match_tokens: Array.isArray(p.match_tokens) ? p.match_tokens : [],
+        });
       }
     }
 
+    // Merge new aliases into every touched payee (new + pre-existing).
+    for (const [name, descs] of Object.entries(data.payeeAliases ?? {})) {
+      const key = name.trim();
+      const target = existingByName.get(key);
+      if (!target || !descs?.length) continue;
+      const merged = dedupeAliases([...target.aliases, ...descs]);
+      // Skip write when nothing new was learned.
+      if (merged.length === target.aliases.length &&
+          merged.every((a, i) => a === target.aliases[i])) continue;
+      const nextTokens = matchTokensFor(key, merged);
+      const { error: upErr } = await context.supabase
+        .from("memorized_payees")
+        .update({ aliases: merged, match_tokens: nextTokens, modified_by: context.userId })
+        .eq("id", target.id);
+      if (upErr) throw upErr;
+    }
+
+    // ---- Transaction inserts ----
     const rows = data.transactions.map((t) => ({
       ...t,
       account_id: data.accountId,
@@ -640,7 +773,6 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
       tags: [],
     }));
 
-    // Chunked inserts to keep each request small
     const CHUNK = 500;
     for (let i = 0; i < rows.length; i += CHUNK) {
       const slice = rows.slice(i, i + CHUNK);
@@ -678,3 +810,4 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
     }
     return { ok: true, inserted: rows.length };
   });
+

@@ -230,10 +230,19 @@ export function StatementImportDialog() {
           category_id: c.category_id ?? null,
           txn_type: c.type,
         }));
+      // Every cluster (new + pre-existing) teaches the system its raw descriptions
+      // so the next import auto-snaps similar rows to the same payee.
+      const payeeAliases: Record<string, string[]> = {};
+      for (const c of clusters) {
+        const name = c.name.trim();
+        if (!name || !c.descriptions.length) continue;
+        (payeeAliases[name] ??= []).push(...c.descriptions);
+      }
       await saveFn({
         data: {
           accountId,
           newPayees,
+          payeeAliases,
           transactions: toSave.map((r) => ({
             txn_date: r.date,
             amount: Number(r.amount),
@@ -254,6 +263,7 @@ export function StatementImportDialog() {
       setSaving(false);
     }
   };
+
 
   return (
     <Dialog
