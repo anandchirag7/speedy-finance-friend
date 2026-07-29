@@ -1722,8 +1722,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      _match_tokens_for_name: { Args: { s: string }; Returns: string[] }
-      _normalize_desc_for_cluster: { Args: { s: string }; Returns: string }
       has_household_access: {
         Args: { _household_id: string }
         Returns: boolean
