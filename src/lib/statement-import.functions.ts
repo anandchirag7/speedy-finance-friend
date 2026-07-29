@@ -606,7 +606,7 @@ export const clusterStatementPayees = createServerFn({ method: "POST" })
       .eq("household_id", householdId);
     const { data: existingPayeesRows } = await context.supabase
       .from("memorized_payees")
-      .select("merchant")
+      .select("merchant, aliases")
       .eq("household_id", householdId);
 
     const sourceDescriptions = data.transactions?.length
@@ -620,12 +620,16 @@ export const clusterStatementPayees = createServerFn({ method: "POST" })
     const clusters = await clusterPayeesFast(
       uniqueDescriptions,
       (cats ?? []).map((c: any) => ({ name: c.name, kind: c.kind })),
-      (existingPayeesRows ?? []).map((p: any) => p.merchant),
+      (existingPayeesRows ?? []).map((p: any) => ({
+        name: p.merchant,
+        aliases: Array.isArray(p.aliases) ? p.aliases : [],
+      })),
       typeByDesc,
     );
 
     return { payees: clusters };
   });
+
 
 
 const bulkInput = z.object({
