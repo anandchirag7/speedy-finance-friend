@@ -283,6 +283,52 @@ function tokens(s: string): string[] {
     .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !PAYMENT_NOISE.has(t));
 }
 
+function cleanPayeeName(desc: string): string {
+  const withHandlesExpanded = comparable(desc).replace(/\b([A-Z0-9._-]{3,})@[A-Z0-9._-]+\b/g, " $1 ");
+  const segments = withHandlesExpanded
+    .split(/[\/|*:_\-]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let best = "";
+  let bestScore = -1;
+  for (const segment of segments.length ? segments : [withHandlesExpanded]) {
+    const ts = tokens(segment);
+    if (!ts.length) continue;
+    const alpha = ts.filter((t) => /[A-Z]/.test(t)).length;
+    const score = alpha * 3 + Math.min(ts.join(" ").length, 24) - (segment.match(/\d/g)?.length ?? 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = ts.slice(0, 4).join(" ");
+    }
+  }
+
+  if (!best) best = tokens(normalizeDescForCluster(desc)).slice(0, 4).join(" ");
+  return titleCase(best || desc.slice(0, 60)).slice(0, 80);
+}
+
+function guessCategory(name: string, descriptions: string[], categories: Array<{ name: string; kind: string }>): string {
+  const haystack = comparable(`${name} ${descriptions.join(" ")}`);
+  const categoryNames = categories.map((c) => c.name);
+  for (const hint of CATEGORY_HINTS) {
+    if (!hint.words.some((w) => haystack.includes(w))) continue;
+    const match = categoryNames.find((cat) => hint.categories.some((target) => cat.toLowerCase().includes(target.toLowerCase())));
+    if (match) return match;
+  }
+  return "";
+}
+
+function inferType(descriptions: string[], typeByDesc: Map<string, "expense" | "income" | "transfer">): "expense" | "income" | "transfer" {
+  const counts = { expense: 0, income: 0, transfer: 0 };
+  for (const d of descriptions) counts[typeByDesc.get(d) ?? "expense"]++;
+  if (counts.income > counts.expense && counts.income >= counts.transfer) return "income";
+  if (counts.transfer > counts.expense && counts.transfer >= counts.income) return "transfer";
+  const haystack = comparable(descriptions.join(" "));
+  const hinted = CATEGORY_HINTS.find((h) => h.type && h.words.some((w) => haystack.includes(w)))?.type;
+  return hinted ?? "expense";
+}
+
+
 type ExistingPayeeRich = { name: string; aliases: string[] };
 
 type MatcherIndex = {
