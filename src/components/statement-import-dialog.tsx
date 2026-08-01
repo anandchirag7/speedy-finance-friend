@@ -22,14 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { listAccounts } from "@/lib/finance.functions";
 import { StatementReviewTable } from "@/components/statement-review-table";
 import {
@@ -652,7 +644,7 @@ function PayeesStep({
                       Payee name
                     </Label>
                     <Sparkles className="h-3 w-3 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">AI suggested</span>
+                    <span className="text-[10px] text-muted-foreground">auto-detected</span>
                   </div>
                   <Input
                     value={c.name}
