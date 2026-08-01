@@ -146,6 +146,7 @@ export function StatementImportDialog() {
     setClusters([]);
     setPhase("idle");
     setPhaseStats(null);
+    setUploadId(null);
   };
 
   const onUpload = async () => {
@@ -155,11 +156,13 @@ export function StatementImportDialog() {
     setParsing(true);
     setPhase("parsing");
     setPhaseStats(null);
+    setUploadId(null);
     try {
       const base64 = await readFileAsBase64(file);
 
-      // ---- Phase 1: extraction (fast for CSV/Excel) ----
-      const extracted = await extractFn({
+      // Fast path: parse -> normalize -> dedupe -> dictionary lookup.
+      // Unknown patterns are named by AI in the background.
+      const res = await startFn({
         data: {
           accountId,
           bank,
@@ -168,65 +171,77 @@ export function StatementImportDialog() {
           base64,
         },
       });
-      if (!extracted.transactions.length) {
+
+      if (!res.transactions.length) {
         toast.error("No transactions found in file");
         setPhase("idle");
         return;
       }
-      setCategories(extracted.categories);
-      setExistingPayees(extracted.existingPayees);
 
-      const rawParsed: ParsedTxn[] = extracted.transactions.map((t) => ({
+      setCategories(res.categories);
+      setExistingPayees(res.existingPayees);
+
+      const resolved = res.resolved as Record<
+        string,
+        { payee: string; category: string | null; source: string }
+      >;
+      const catByName = new Map<string, string>();
+      for (const c of res.categories) catByName.set(c.name.toLowerCase(), c.id);
+
+      const rawParsed: ParsedTxn[] = res.transactions.map((t) => ({
         date: t.date,
         description: t.description,
         amount: t.amount,
         type: t.type,
-        suggestedCategory: "",
-        payee: t.description,
+        pattern: t.pattern,
+        suggestedCategory: resolved[t.pattern]?.category ?? "",
+        payee: resolved[t.pattern]?.payee ?? titleCase(t.pattern),
       }));
       setRawTxns(rawParsed);
 
-      const uniqueDescriptions = Array.from(new Set(rawParsed.map((t) => t.description)));
-      setPhaseStats({ rows: rawParsed.length, unique: uniqueDescriptions.length });
+      // One cluster per normalized pattern
+      const grouped = new Map<string, { descriptions: string[]; type: ParsedTxn["type"] }>();
+      for (const t of rawParsed) {
+        const g = grouped.get(t.pattern);
+        if (g) {
+          if (!g.descriptions.includes(t.description)) g.descriptions.push(t.description);
+        } else {
+          grouped.set(t.pattern, { descriptions: [t.description], type: t.type });
+        }
+      }
+      setPhaseStats({ rows: rawParsed.length, unique: grouped.size });
 
-      // ---- Phase 2: smart payee clustering ----
-      setPhase("clustering");
-      const { payees } = await clusterFn({
-        data: {
-          descriptions: uniqueDescriptions,
-          transactions: rawParsed.map((t) => ({ description: t.description, type: t.type })),
+      const initialClusters: PayeeCluster[] = Array.from(grouped.entries()).map(
+        ([pattern, group]) => {
+          const hit = resolved[pattern];
+          const name = hit?.payee ?? titleCase(pattern);
+          const existing = res.existingPayees.find(
+            (e) => e.merchant.toLowerCase() === name.toLowerCase(),
+          );
+          return {
+            pattern,
+            pendingAi: !hit,
+            originalName: name,
+            name,
+            descriptions: group.descriptions,
+            category_id:
+              existing?.category_id ??
+              (hit?.category ? catByName.get(hit.category.toLowerCase()) ?? null : null),
+            type: group.type,
+            saveAsPayee: !existing,
+            isExisting: !!existing,
+          };
         },
-      });
-
-      const initialClusters: PayeeCluster[] = payees.map((p) => {
-        const match = extracted.categories.find(
-          (c) => c.name.toLowerCase() === (p.suggestedCategory ?? "").toLowerCase(),
-        );
-        const existing = extracted.existingPayees.find(
-          (e) => e.merchant.toLowerCase() === p.name.toLowerCase(),
-        );
-        return {
-          originalName: p.name,
-          name: p.name,
-          descriptions: p.descriptions ?? [],
-          category_id: existing?.category_id ?? match?.id ?? null,
-          type: p.type,
-          saveAsPayee: !existing,
-          isExisting: !!existing || !!p.isExisting,
-        };
-      });
-
-      // Attach cluster suggestions back to raw txns for later category defaults
-      const byDesc = new Map<string, { name: string; category: string }>();
-      for (const p of payees) for (const d of p.descriptions ?? []) byDesc.set(d, { name: p.name, category: p.suggestedCategory ?? "" });
-      setRawTxns(rawParsed.map((t) => {
-        const hit = byDesc.get(t.description);
-        return hit ? { ...t, payee: hit.name, suggestedCategory: hit.category } : t;
-      }));
+      );
 
       setClusters(initialClusters);
+      setUploadId(res.uploadId);
       setStep("payees");
-      toast.success(`Clustered ${initialClusters.length} payees from ${rawParsed.length} transactions`);
+      const unknown = initialClusters.filter((c) => c.pendingAi).length;
+      toast.success(
+        `${rawParsed.length} transactions · ${initialClusters.length} payees` +
+          (unknown ? ` · naming ${unknown} new merchants in the background` : " · all recognised"),
+      );
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to parse statement");
     } finally {
@@ -245,9 +260,23 @@ export function StatementImportDialog() {
       const category_id = cluster?.category_id ?? null;
       return { ...t, merchant, category_id, include: true };
     });
+
+    // Teach the system: confirmed names become personal overrides + dictionary entries
+    const corrections = clusters
+      .filter((c) => c.pattern && c.name.trim() && !c.pendingAi)
+      .map((c) => ({
+        normalizedPattern: c.pattern,
+        payeeName: c.name.trim(),
+        category: categories.find((cat) => cat.id === c.category_id)?.name ?? null,
+      }));
+    if (corrections.length) {
+      void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
+    }
+
     setRows(mapped);
     setStep("mapping");
   };
+
 
   const onSave = async () => {
     const toSave = rows.filter((r) => r.include);
