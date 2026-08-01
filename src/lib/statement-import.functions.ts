@@ -433,7 +433,9 @@ function clusterPayeesFast(
   for (const d of descriptions) {
     const existing = matchExistingPayee(d, idx);
     const name = existing ?? cleanPayeeName(d);
-    const key = payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
+    const key = existing
+      ? `payee:${payeeKey(name)}`
+      : coreKey(d) || payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
     const current = groups.get(key);
     if (current) {
       current.descriptions.add(d);
