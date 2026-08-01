@@ -625,6 +625,13 @@ function AccountRegisterPage() {
       {/* ── dialogs ── */}
       <FastEntryDialog open={addOpen} onOpenChange={setAddOpen} hideTrigger />
       <AccountFormDialog open={editAccountOpen} onOpenChange={setEditAccountOpen} initial={account} />
+      <AccountResetDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        accountId={accountId}
+        accountName={account?.name}
+        onDeleted={() => router.navigate({ to: "/accounts" })}
+      />
     </div>
   );
 }
