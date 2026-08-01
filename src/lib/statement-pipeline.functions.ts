@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestUrl } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
@@ -20,6 +19,7 @@ export const startStatementUpload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => startInput.parse(d))
   .handler(async ({ context, data }) => {
+    const { getRequestUrl } = await import("@tanstack/react-start/server");
     const { runStatementUpload } = await import("./statement-pipeline.server");
     return runStatementUpload({
       supabase: context.supabase,
