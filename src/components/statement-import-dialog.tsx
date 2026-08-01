@@ -43,7 +43,7 @@ type ParsedTxn = {
   type: "income" | "expense" | "transfer";
   suggestedCategory: string;
   payee: string;
-  pattern: string;
+  pattern?: string;
 };
 
 type Category = { id: string; name: string; kind: string; parent_id: string | null };
