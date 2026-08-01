@@ -6,7 +6,13 @@
  * Layer 3: batched AI classification (runs in the background, never blocks)
  */
 
-import { chunk, lookupKeys, withConcurrency, PIPELINE_CATEGORIES } from "./statement-normalize";
+import {
+  chunk,
+  lookupKeys,
+  titleCase,
+  withConcurrency,
+  PIPELINE_CATEGORIES,
+} from "./statement-normalize";
 
 export type ResolvedMerchant = {
   payee: string;
@@ -206,13 +212,4 @@ export async function classifyPendingPatterns(opts: {
   });
 
   return merged;
-}
-
-export function titleCase(s: string): string {
-  return s
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }
