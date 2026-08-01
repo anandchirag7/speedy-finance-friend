@@ -94,6 +94,54 @@ const NOISE_TOKENS = new Set([
   "FOR",
 ]);
 
+/** Geography / generic tail tokens: kept out of the pattern so the same
+ * merchant in two cities collapses to one entry. */
+const GEO_TOKENS = new Set([
+  "INDIA",
+  "IND",
+  "IN",
+  "MUMBAI",
+  "DELHI",
+  "NEWDELHI",
+  "BANGALORE",
+  "BENGALURU",
+  "BLR",
+  "CHENNAI",
+  "HYDERABAD",
+  "HYD",
+  "PUNE",
+  "KOLKATA",
+  "GURGAON",
+  "GURUGRAM",
+  "NOIDA",
+  "AHMEDABAD",
+  "JAIPUR",
+  "KOCHI",
+  "SURAT",
+  "LUCKNOW",
+  "INDORE",
+  "CHANDIGARH",
+  "NAGPUR",
+  "COIMBATORE",
+  "ORDER",
+  "ORDERS",
+  "STORE",
+  "STORES",
+  "BILLDESK",
+  "RAZORPAY",
+  "PAYU",
+  "CCAVENUE",
+  "MERCHANT",
+  "SERVICES",
+  "SERVICE",
+  "TECHNOLOGIES",
+  "TECHNOLOGY",
+  "SOLUTIONS",
+  "ENTERPRISES",
+  "PH",
+]);
+
+
 /**
  * Turn a raw bank narration into a stable, comparable merchant pattern.
  *
