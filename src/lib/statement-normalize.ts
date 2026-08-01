@@ -139,6 +139,21 @@ const GEO_TOKENS = new Set([
   "SOLUTIONS",
   "ENTERPRISES",
   "PH",
+  "YBL",
+  "OKICICI",
+  "OKAXIS",
+  "OKSBI",
+  "OKHDFCBANK",
+  "OKBIZAXIS",
+  "IBL",
+  "AXL",
+  "APL",
+  "PTYES",
+  "PTSBI",
+  "PTAXIS",
+  "JUPITERAXIS",
+  "WAAXIS",
+  "SLC",
 ]);
 
 
