@@ -299,6 +299,9 @@ function AccountRegisterPage() {
               </SheetTrigger>
               <CommandPanel account={account} />
             </Sheet>
+            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setResetOpen(true)}>
+              <Trash2 className="mr-1.5 h-4 w-4" />Reset data
+            </Button>
             <div className="ml-auto flex items-center gap-2">
               <Button size="sm" variant="ghost" onClick={() => refetch()} disabled={isFetching}>
                 <RefreshCw className={cn("mr-1.5 h-4 w-4", isFetching && "animate-spin")} /> Refresh
