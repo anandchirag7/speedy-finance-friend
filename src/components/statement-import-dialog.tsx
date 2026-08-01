@@ -424,12 +424,69 @@ function PayeesStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
+  const polishFn = useServerFn(polishPayeeNames);
+  const [polishing, setPolishing] = useState(false);
   const [query, setQuery] = useState("");
   // Default: all clusters collapsed. Users can expand individually or via "Expand all".
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<"all" | "new" | "existing">("all");
   // per-cluster selected descriptions (by description string)
   const [selected, setSelected] = useState<Record<number, Set<string>>>({});
+
+  const onPolish = async () => {
+    // Only new clusters get AI-renamed; existing payees keep their saved names.
+    const targets = clusters
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => !c.isExisting)
+      .slice(0, 400);
+    if (!targets.length) {
+      toast.info("Nothing to polish — all payees already exist");
+      return;
+    }
+    setPolishing(true);
+    try {
+      const { renames, merges } = await polishFn({
+        data: {
+          clusters: targets.map(({ c }) => ({
+            name: c.name,
+            sample: c.descriptions[0] ?? "",
+            count: c.descriptions.length,
+          })),
+        },
+      });
+      let next = clusters.map((c) => ({ ...c }));
+      // Apply renames
+      Object.entries(renames ?? {}).forEach(([k, name]) => {
+        const target = targets[Number(k)];
+        if (target && name) next[target.i] = { ...next[target.i], name: String(name) };
+      });
+      // Apply merges (keep the largest cluster of each group)
+      const removed = new Set<number>();
+      for (const group of merges ?? []) {
+        const real = group.map((g: number) => targets[g]?.i).filter((v): v is number => v != null && !removed.has(v));
+        if (real.length < 2) continue;
+        const keep = real.reduce((a, b) => (next[a].descriptions.length >= next[b].descriptions.length ? a : b));
+        for (const idx of real) {
+          if (idx === keep) continue;
+          next[keep] = { ...next[keep], descriptions: [...next[keep].descriptions, ...next[idx].descriptions] };
+          removed.add(idx);
+        }
+      }
+      next = next.filter((_, i) => !removed.has(i));
+      setClusters(next);
+      setExpanded({});
+      setSelected({});
+      const renameCount = Object.keys(renames ?? {}).length;
+      toast.success(
+        `AI cleaned ${renameCount} name${renameCount === 1 ? "" : "s"}${removed.size ? ` · merged ${removed.size} duplicate group${removed.size === 1 ? "" : "s"}` : ""}`,
+      );
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not polish names");
+    } finally {
+      setPolishing(false);
+    }
+  };
+
 
   const update = (i: number, patch: Partial<PayeeCluster>) => {
     const copy = [...clusters];
