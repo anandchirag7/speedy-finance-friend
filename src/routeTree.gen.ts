@@ -27,6 +27,7 @@ import { Route as AuthenticatedAccountsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedChatIndexRouteImport } from './routes/_authenticated/chat.index'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat.$threadId'
 import { Route as AuthenticatedAccountsAccountIdRouteImport } from './routes/_authenticated/accounts_.$accountId'
+import { Route as ApiPublicHooksStatementClassifyRouteImport } from './routes/api/public/hooks/statement-classify'
 import { Route as ApiPublicHooksBillsWhatsappRemindersRouteImport } from './routes/api/public/hooks/bills-whatsapp-reminders'
 
 const AuthRoute = AuthRouteImport.update({
@@ -122,6 +123,12 @@ const AuthenticatedAccountsAccountIdRoute =
     path: '/accounts/$accountId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const ApiPublicHooksStatementClassifyRoute =
+  ApiPublicHooksStatementClassifyRouteImport.update({
+    id: '/api/public/hooks/statement-classify',
+    path: '/api/public/hooks/statement-classify',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksBillsWhatsappRemindersRoute =
   ApiPublicHooksBillsWhatsappRemindersRouteImport.update({
     id: '/api/public/hooks/bills-whatsapp-reminders',
@@ -148,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat/': typeof AuthenticatedChatIndexRoute
   '/api/public/hooks/bills-whatsapp-reminders': typeof ApiPublicHooksBillsWhatsappRemindersRoute
+  '/api/public/hooks/statement-classify': typeof ApiPublicHooksStatementClassifyRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -167,6 +175,7 @@ export interface FileRoutesByTo {
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/chat': typeof AuthenticatedChatIndexRoute
   '/api/public/hooks/bills-whatsapp-reminders': typeof ApiPublicHooksBillsWhatsappRemindersRoute
+  '/api/public/hooks/statement-classify': typeof ApiPublicHooksStatementClassifyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -189,6 +198,7 @@ export interface FileRoutesById {
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
   '/_authenticated/chat/': typeof AuthenticatedChatIndexRoute
   '/api/public/hooks/bills-whatsapp-reminders': typeof ApiPublicHooksBillsWhatsappRemindersRoute
+  '/api/public/hooks/statement-classify': typeof ApiPublicHooksStatementClassifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -211,6 +221,7 @@ export interface FileRouteTypes {
     | '/chat/$threadId'
     | '/chat/'
     | '/api/public/hooks/bills-whatsapp-reminders'
+    | '/api/public/hooks/statement-classify'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | '/chat/$threadId'
     | '/chat'
     | '/api/public/hooks/bills-whatsapp-reminders'
+    | '/api/public/hooks/statement-classify'
   id:
     | '__root__'
     | '/_authenticated'
@@ -251,6 +263,7 @@ export interface FileRouteTypes {
     | '/_authenticated/chat/$threadId'
     | '/_authenticated/chat/'
     | '/api/public/hooks/bills-whatsapp-reminders'
+    | '/api/public/hooks/statement-classify'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -258,6 +271,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiPublicHooksBillsWhatsappRemindersRoute: typeof ApiPublicHooksBillsWhatsappRemindersRoute
+  ApiPublicHooksStatementClassifyRoute: typeof ApiPublicHooksStatementClassifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -388,6 +402,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountsAccountIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/hooks/statement-classify': {
+      id: '/api/public/hooks/statement-classify'
+      path: '/api/public/hooks/statement-classify'
+      fullPath: '/api/public/hooks/statement-classify'
+      preLoaderRoute: typeof ApiPublicHooksStatementClassifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/bills-whatsapp-reminders': {
       id: '/api/public/hooks/bills-whatsapp-reminders'
       path: '/api/public/hooks/bills-whatsapp-reminders'
@@ -452,6 +473,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   ApiPublicHooksBillsWhatsappRemindersRoute:
     ApiPublicHooksBillsWhatsappRemindersRoute,
+  ApiPublicHooksStatementClassifyRoute: ApiPublicHooksStatementClassifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
