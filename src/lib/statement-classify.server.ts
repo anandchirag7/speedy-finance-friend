@@ -62,7 +62,6 @@ export async function resolveFromLookups(
   }
 
   const unresolved: string[] = [];
-  const matchedKeys: string[] = [];
 
   for (const p of patterns) {
     const keys = keysByPattern.get(p) ?? [p];
@@ -78,7 +77,6 @@ export async function resolveFromLookups(
       for (const k of keys) {
         const d = dictMap.get(k);
         if (d) {
-          matchedKeys.push(k);
           hit = { payee: d.payee, category: d.category ?? null, source: "dictionary" };
           break;
         }
@@ -86,13 +84,6 @@ export async function resolveFromLookups(
     }
     if (hit) resolved[p] = hit;
     else unresolved.push(p);
-  }
-
-  // Popularity counter — best effort, never blocks the response
-  if (matchedKeys.length) {
-    void supabase
-      .rpc("bump_merchant_matches", { _patterns: Array.from(new Set(matchedKeys)) })
-      .then(() => undefined, () => undefined);
   }
 
   return { resolved, unresolved };
