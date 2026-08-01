@@ -21,6 +21,7 @@ export type ReviewRow = {
   merchant: string;
   category_id: string | null;
   include: boolean;
+  pattern?: string;
 };
 
 type Category = { id: string; name: string; kind: string; parent_id: string | null };

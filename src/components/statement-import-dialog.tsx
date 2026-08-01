@@ -572,6 +572,8 @@ function PayeesStep({
     const src = clusters[fromIdx];
     const set = new Set(descs);
     const newCluster: PayeeCluster = {
+      pattern: "",
+      pendingAi: false,
       originalName: descs[0].slice(0, 60),
       name: descs[0].slice(0, 60),
       descriptions: descs,
