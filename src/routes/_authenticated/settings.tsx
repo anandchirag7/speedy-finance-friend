@@ -8,7 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
+import { FactoryResetDialog } from "@/components/data-reset-dialog";
 import { getMyProfile, updateMyProfile } from "@/lib/profile.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -25,6 +27,8 @@ function SettingsPage() {
 
   const [waNumber, setWaNumber] = useState("");
   const [waEnabled, setWaEnabled] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+
 
   useEffect(() => {
     if (data) {
@@ -110,6 +114,26 @@ function SettingsPage() {
           </p>
         </CardContent>
       </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-4 w-4" /> Danger zone
+          </CardTitle>
+          <CardDescription>
+            Delete your data — accounts, transactions, bills, reminders, budgets and more. You choose exactly what gets
+            erased. This cannot be undone.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">Factory reset removes everything and gives you a clean slate.</p>
+          <Button variant="destructive" onClick={() => setResetOpen(true)}>
+            <Trash2 className="mr-1.5 h-4 w-4" /> Delete data
+          </Button>
+        </CardContent>
+      </Card>
+
+      <FactoryResetDialog open={resetOpen} onOpenChange={setResetOpen} />
     </div>
   );
 }

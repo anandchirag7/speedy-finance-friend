@@ -45,6 +45,8 @@ import {
 } from "@/lib/transactions.functions";
 import { AccountFormDialog } from "@/components/account-form-dialog";
 import { FastEntryDialog } from "@/components/fast-entry-dialog";
+import { AccountResetDialog } from "@/components/data-reset-dialog";
+
 
 export const Route = createFileRoute("/_authenticated/accounts_/$accountId")({
   head: ({ params }) => ({
@@ -125,6 +127,7 @@ function AccountRegisterPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editAccountOpen, setEditAccountOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [density, setDensity] = useState<"compact" | "comfortable" | "spacious">("comfortable");
   const [chartTab, setChartTab] = useState<"balance" | "cashflow" | "compare" | "category">("balance");
@@ -296,6 +299,9 @@ function AccountRegisterPage() {
               </SheetTrigger>
               <CommandPanel account={account} />
             </Sheet>
+            <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setResetOpen(true)}>
+              <Trash2 className="mr-1.5 h-4 w-4" />Reset data
+            </Button>
             <div className="ml-auto flex items-center gap-2">
               <Button size="sm" variant="ghost" onClick={() => refetch()} disabled={isFetching}>
                 <RefreshCw className={cn("mr-1.5 h-4 w-4", isFetching && "animate-spin")} /> Refresh
@@ -619,6 +625,13 @@ function AccountRegisterPage() {
       {/* ── dialogs ── */}
       <FastEntryDialog open={addOpen} onOpenChange={setAddOpen} hideTrigger />
       <AccountFormDialog open={editAccountOpen} onOpenChange={setEditAccountOpen} initial={account} />
+      <AccountResetDialog
+        open={resetOpen}
+        onOpenChange={setResetOpen}
+        accountId={accountId}
+        accountName={account?.name}
+        onDeleted={() => router.navigate({ to: "/accounts" })}
+      />
     </div>
   );
 }
