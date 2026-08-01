@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search, Split, GitMerge, ArrowRight, Plus } from "lucide-react";
@@ -43,12 +43,15 @@ type ParsedTxn = {
   type: "income" | "expense" | "transfer";
   suggestedCategory: string;
   payee: string;
+  pattern: string;
 };
 
 type Category = { id: string; name: string; kind: string; parent_id: string | null };
 type ExistingPayee = { id: string; merchant: string; category_id: string | null };
 
 type PayeeCluster = {
+  pattern: string; // normalized merchant pattern this cluster came from
+  pendingAi: boolean; // waiting on background AI naming
   originalName: string; // AI-suggested name (used to remap rows)
   name: string; // user-editable final name
   descriptions: string[];
@@ -77,8 +80,8 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export function StatementImportDialog() {
-  const extractFn = useServerFn(extractStatementRows);
-  const clusterFn = useServerFn(clusterStatementPayees);
+  const startFn = useServerFn(startStatementUpload);
+  const correctionsFn = useServerFn(saveMerchantCorrections);
   const saveFn = useServerFn(bulkInsertTransactions);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
@@ -101,6 +104,35 @@ export function StatementImportDialog() {
   const [clusters, setClusters] = useState<PayeeCluster[]>([]);
   const [phase, setPhase] = useState<"idle" | "parsing" | "clustering">("idle");
   const [phaseStats, setPhaseStats] = useState<{ rows: number; unique: number } | null>(null);
+  const [uploadId, setUploadId] = useState<string | null>(null);
+  const classification = useStatementClassification(uploadId);
+
+  const categoryIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of categories) m.set(c.name.toLowerCase(), c.id);
+    return m;
+  }, [categories]);
+
+  // Background AI naming streams in — fill any cluster still waiting on a name.
+  useEffect(() => {
+    const resolved = classification.resolved;
+    if (!resolved || !Object.keys(resolved).length) return;
+    setClusters((prev) =>
+      prev.map((c) => {
+        const hit = resolved[c.pattern];
+        if (!c.pendingAi || !hit) return c;
+        return {
+          ...c,
+          name: hit.payee,
+          originalName: hit.payee,
+          pendingAi: false,
+          category_id:
+            c.category_id ??
+            (hit.category ? categoryIdByName.get(hit.category.toLowerCase()) ?? null : null),
+        };
+      }),
+    );
+  }, [classification.resolved, categoryIdByName]);
 
   const reset = () => {
     setStep("upload");
