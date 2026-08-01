@@ -615,6 +615,18 @@ function PayeesStep({
           >
             Collapse all
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 text-xs"
+            disabled={polishing}
+            onClick={onPolish}
+          >
+            {polishing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+            Polish names with AI
+          </Button>
+
         </div>
       </div>
 
