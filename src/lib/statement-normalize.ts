@@ -188,26 +188,53 @@ export function normalizePattern(raw: string): string {
   // Punctuation -> space (keep & and spaces)
   s = s.replace(/[^A-Z0-9& ]+/g, " ");
 
-  // Drop noise tokens and 1-char fragments
-  const kept = s
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((t) => t.length > 1 && !NOISE_TOKENS.has(t));
+  // Drop noise tokens, geo/generic tails, 1-char fragments and repeats
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const t of s.split(/\s+/)) {
+    if (!t || t.length < 2) continue;
+    if (NOISE_TOKENS.has(t) || GEO_TOKENS.has(t)) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    kept.push(t);
+  }
 
-  let out = kept.join(" ").replace(/\s+/g, " ").trim();
+  let out = kept.slice(0, 6).join(" ").trim();
 
-  // Nothing meaningful left — fall back to a coarse cleanup of the original so
-  // distinct narrations don't all collapse into one empty bucket.
+  // Nothing meaningful left (pure numeric VPAs, ATM withdrawals, bank charges):
+  // fall back to a de-digitised cleanup so distinct rows don't all collapse.
   if (!out) {
-    out = String(raw)
+    const fallback = String(raw)
       .toUpperCase()
-      .replace(/[^A-Z0-9& ]+/g, " ")
-      .replace(/\s+/g, " ")
+      .replace(PREFIXES, "")
+      .replace(/\d/g, " ")
+      .replace(/[^A-Z& ]+/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 1 && !NOISE_TOKENS.has(t))
+      .slice(0, 4)
+      .join(" ")
       .trim();
+    out = fallback || "MISC";
   }
 
   return out.slice(0, 120);
 }
+
+/**
+ * Candidate keys for a dictionary lookup, most specific first.
+ * "SWIGGY BANGALORE" and "SWIGGY ORDER" both reach the seeded "SWIGGY" entry.
+ */
+export function lookupKeys(pattern: string): string[] {
+  const parts = pattern.split(" ").filter(Boolean);
+  const keys: string[] = [];
+  for (let take = Math.min(parts.length, 3); take >= 1; take--) {
+    const key = parts.slice(0, take).join(" ");
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  if (!keys.includes(pattern)) keys.unshift(pattern);
+  return keys;
+}
+
 
 /** Split an array into fixed-size chunks. */
 export function chunk<T>(items: T[], size: number): T[][] {
