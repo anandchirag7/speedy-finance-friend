@@ -409,6 +409,21 @@ export function StatementImportDialog() {
           </div>
         )}
 
+        {step === "payees" && classification.status === "classifying" && (
+          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <span className="font-medium">Naming new merchants with AI…</span>
+            <span className="text-muted-foreground">
+              {clusters.filter((c) => c.pendingAi).length} left · runs in the background, safe to keep editing
+            </span>
+          </div>
+        )}
+        {step === "payees" && classification.status === "failed" && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            Background naming failed — you can still rename payees manually before saving.
+          </div>
+        )}
+
         {step === "payees" && (
           <PayeesStep
             clusters={clusters}
