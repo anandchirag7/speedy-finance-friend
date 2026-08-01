@@ -283,14 +283,18 @@ function tokens(s: string): string[] {
     .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !PAYMENT_NOISE.has(t));
 }
 
-function cleanPayeeName(desc: string): string {
+/**
+ * Deterministically pull the most prominent (merchant-like) tokens out of a raw
+ * narration. This is the clustering primitive — no AI involved.
+ */
+function prominentTokens(desc: string): string[] {
   const withHandlesExpanded = comparable(desc).replace(/\b([A-Z0-9._-]{3,})@[A-Z0-9._-]+\b/g, " $1 ");
   const segments = withHandlesExpanded
     .split(/[\/|*:_\-]+/g)
     .map((s) => s.trim())
     .filter(Boolean);
 
-  let best = "";
+  let best: string[] = [];
   let bestScore = -1;
   for (const segment of segments.length ? segments : [withHandlesExpanded]) {
     const ts = tokens(segment);
@@ -299,11 +303,29 @@ function cleanPayeeName(desc: string): string {
     const score = alpha * 3 + Math.min(ts.join(" ").length, 24) - (segment.match(/\d/g)?.length ?? 0);
     if (score > bestScore) {
       bestScore = score;
-      best = ts.slice(0, 4).join(" ");
+      best = ts.slice(0, 4);
     }
   }
+  if (!best.length) best = tokens(normalizeDescForCluster(desc)).slice(0, 4);
+  return best;
+}
 
-  if (!best) best = tokens(normalizeDescForCluster(desc)).slice(0, 4).join(" ");
+/**
+ * Stable grouping key: the 1-2 most significant alphabetic tokens of the
+ * narration. "SWIGGY BANGALORE 8891" and "UPI/SWIGGY ORDER/xyz" collapse to
+ * the same key without any model call.
+ */
+function coreKey(desc: string): string {
+  const ts = prominentTokens(desc).filter((t) => /^[A-Z][A-Z0-9&]*$/.test(t));
+  if (!ts.length) return "";
+  const ranked = [...ts].sort((a, b) => b.length - a.length);
+  const primary = ranked[0];
+  const secondary = ts.find((t) => t !== primary && t.length >= 4);
+  return [primary, secondary].filter(Boolean).sort().join(" ");
+}
+
+function cleanPayeeName(desc: string): string {
+  const best = prominentTokens(desc).join(" ");
   return titleCase(best || desc.slice(0, 60)).slice(0, 80);
 }
 
@@ -411,7 +433,9 @@ function clusterPayeesFast(
   for (const d of descriptions) {
     const existing = matchExistingPayee(d, idx);
     const name = existing ?? cleanPayeeName(d);
-    const key = payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
+    const key = existing
+      ? `payee:${payeeKey(name)}`
+      : coreKey(d) || payeeKey(name) || normalizeDescForCluster(d) || d.toUpperCase().slice(0, 60);
     const current = groups.get(key);
     if (current) {
       current.descriptions.add(d);
@@ -628,6 +652,96 @@ export const clusterStatementPayees = createServerFn({ method: "POST" })
     );
 
     return { payees: clusters };
+  });
+
+const polishInput = z.object({
+  clusters: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(120),
+        sample: z.string().max(200).default(""),
+        count: z.number().int().nonnegative().default(0),
+      }),
+    )
+    .min(1)
+    .max(400),
+});
+
+/**
+ * Step 3 (optional, user-triggered): AI *only* renames the already-formed
+ * clusters and suggests merges. Payload is one line per cluster, so this stays
+ * fast even for statements with thousands of rows.
+ */
+export const polishPayeeNames = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => polishInput.parse(d))
+  .handler(async ({ data }) => {
+    const apiKey = process.env.LOVABLE_API_KEY;
+    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+
+    const lines = data.clusters
+      .map((c, i) => `${i}| ${c.name} | ${c.count} txns | e.g. ${c.sample.slice(0, 120)}`)
+      .join("\n");
+
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "system",
+            content: `You clean up merchant/payee names extracted from Indian bank statements.
+Input lines: "index| current name | txn count | e.g. raw narration".
+Return ONLY JSON:
+{ "renames": { "<index>": "Proper Merchant Name" }, "merges": [[<index>, <index>, ...]] }
+Rules:
+- Use the real, well-known brand or person name (e.g. "SWIGGY LTD BANGALORE" -> "Swiggy", "AMAZON PAY IND" -> "Amazon").
+- Keep names short (<= 40 chars), title case, no transaction ids, no city/bank noise.
+- Only include an index in "renames" if the name actually improves.
+- Put indexes that are clearly the SAME merchant into a merges group; keep merges conservative.
+- Never invent merchants that are not implied by the input.`,
+          },
+          { role: "user", content: lines },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 8000,
+      }),
+    });
+    if (!res.ok) throw new Error(`AI gateway failed [${res.status}]`);
+    const j = await res.json();
+    const content: string = j.choices?.[0]?.message?.content ?? "{}";
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      parsed = salvageJson(content) ?? {};
+    }
+
+    const renames: Record<number, string> = {};
+    for (const [k, v] of Object.entries(parsed?.renames ?? {})) {
+      const idx = Number(k);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= data.clusters.length) continue;
+      const name = String(v ?? "").trim().slice(0, 80);
+      if (name) renames[idx] = name;
+    }
+    const merges: number[][] = Array.isArray(parsed?.merges)
+      ? parsed.merges
+          .map((g: any) =>
+            Array.isArray(g)
+              ? Array.from(
+                  new Set(
+                    g
+                      .map((n: any) => Number(n))
+                      .filter((n: number) => Number.isInteger(n) && n >= 0 && n < data.clusters.length),
+                  ),
+                )
+              : [],
+          )
+          .filter((g: number[]) => g.length > 1)
+      : [];
+
+    return { renames, merges };
   });
 
 

@@ -22,18 +22,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { listAccounts } from "@/lib/finance.functions";
+import { StatementReviewTable } from "@/components/statement-review-table";
 import {
   extractStatementRows,
   clusterStatementPayees,
+  polishPayeeNames,
   bulkInsertTransactions,
 } from "@/lib/statement-import.functions";
 
@@ -360,125 +354,8 @@ export function StatementImportDialog() {
 
         {step === "mapping" && (
           <>
-            <div className="flex-1 overflow-auto rounded-md border">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background">
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="w-28">Date</TableHead>
-                    <TableHead className="w-40">Payee</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-24">Type</TableHead>
-                    <TableHead className="w-28 text-right">Amount</TableHead>
-                    <TableHead className="w-48">Category</TableHead>
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r, i) => (
-                    <TableRow key={i} className={r.include ? "" : "opacity-40"}>
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={r.include}
-                          onChange={(e) => {
-                            const copy = [...rows];
-                            copy[i] = { ...r, include: e.target.checked };
-                            setRows(copy);
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="date"
-                          value={r.date}
-                          onChange={(e) => {
-                            const copy = [...rows];
-                            copy[i] = { ...r, date: e.target.value };
-                            setRows(copy);
-                          }}
-                          className="h-8"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={r.merchant}
-                          onChange={(e) => {
-                            const copy = [...rows];
-                            copy[i] = { ...r, merchant: e.target.value };
-                            setRows(copy);
-                          }}
-                          className="h-8 font-medium"
-                        />
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{r.description}</TableCell>
-                      <TableCell>
-                        <Select
-                          value={r.type}
-                          onValueChange={(v: any) => {
-                            const copy = [...rows];
-                            copy[i] = { ...r, type: v };
-                            setRows(copy);
-                          }}
-                        >
-                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="expense">Expense</SelectItem>
-                            <SelectItem value="income">Income</SelectItem>
-                            <SelectItem value="transfer">Transfer</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={r.amount}
-                          onChange={(e) => {
-                            const copy = [...rows];
-                            copy[i] = { ...r, amount: Number(e.target.value) };
-                            setRows(copy);
-                          }}
-                          className="h-8 text-right"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={r.category_id ?? "none"}
-                          onValueChange={(v) => {
-                            const copy = [...rows];
-                            copy[i] = { ...r, category_id: v === "none" ? null : v };
-                            setRows(copy);
-                          }}
-                        >
-                          <SelectTrigger className="h-8">
-                            <SelectValue placeholder={r.suggestedCategory || "Uncategorized"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Uncategorized</SelectItem>
-                            {categories
-                              .filter((c) => c.kind === r.type || r.type === "transfer")
-                              .map((c) => (
-                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => setRows(rows.filter((_, j) => j !== i))}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <StatementReviewTable rows={rows} setRows={setRows} categories={categories} />
+
             <DialogFooter className="mt-2">
               <div className="mr-auto text-sm text-muted-foreground">
                 {rows.filter((r) => r.include).length} of {rows.length} selected
@@ -539,12 +416,69 @@ function PayeesStep({
   onBack: () => void;
   onContinue: () => void;
 }) {
+  const polishFn = useServerFn(polishPayeeNames);
+  const [polishing, setPolishing] = useState(false);
   const [query, setQuery] = useState("");
   // Default: all clusters collapsed. Users can expand individually or via "Expand all".
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState<"all" | "new" | "existing">("all");
   // per-cluster selected descriptions (by description string)
   const [selected, setSelected] = useState<Record<number, Set<string>>>({});
+
+  const onPolish = async () => {
+    // Only new clusters get AI-renamed; existing payees keep their saved names.
+    const targets = clusters
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => !c.isExisting)
+      .slice(0, 400);
+    if (!targets.length) {
+      toast.info("Nothing to polish — all payees already exist");
+      return;
+    }
+    setPolishing(true);
+    try {
+      const { renames, merges } = await polishFn({
+        data: {
+          clusters: targets.map(({ c }) => ({
+            name: c.name,
+            sample: c.descriptions[0] ?? "",
+            count: c.descriptions.length,
+          })),
+        },
+      });
+      let next = clusters.map((c) => ({ ...c }));
+      // Apply renames
+      Object.entries(renames ?? {}).forEach(([k, name]) => {
+        const target = targets[Number(k)];
+        if (target && name) next[target.i] = { ...next[target.i], name: String(name) };
+      });
+      // Apply merges (keep the largest cluster of each group)
+      const removed = new Set<number>();
+      for (const group of merges ?? []) {
+        const real = group.map((g: number) => targets[g]?.i).filter((v): v is number => v != null && !removed.has(v));
+        if (real.length < 2) continue;
+        const keep = real.reduce((a, b) => (next[a].descriptions.length >= next[b].descriptions.length ? a : b));
+        for (const idx of real) {
+          if (idx === keep) continue;
+          next[keep] = { ...next[keep], descriptions: [...next[keep].descriptions, ...next[idx].descriptions] };
+          removed.add(idx);
+        }
+      }
+      next = next.filter((_, i) => !removed.has(i));
+      setClusters(next);
+      setExpanded({});
+      setSelected({});
+      const renameCount = Object.keys(renames ?? {}).length;
+      toast.success(
+        `AI cleaned ${renameCount} name${renameCount === 1 ? "" : "s"}${removed.size ? ` · merged ${removed.size} duplicate group${removed.size === 1 ? "" : "s"}` : ""}`,
+      );
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not polish names");
+    } finally {
+      setPolishing(false);
+    }
+  };
+
 
   const update = (i: number, patch: Partial<PayeeCluster>) => {
     const copy = [...clusters];
@@ -673,6 +607,18 @@ function PayeesStep({
           >
             Collapse all
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 text-xs"
+            disabled={polishing}
+            onClick={onPolish}
+          >
+            {polishing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+            Polish names with AI
+          </Button>
+
         </div>
       </div>
 
@@ -698,7 +644,7 @@ function PayeesStep({
                       Payee name
                     </Label>
                     <Sparkles className="h-3 w-3 text-primary/70" />
-                    <span className="text-[10px] text-muted-foreground">AI suggested</span>
+                    <span className="text-[10px] text-muted-foreground">auto-detected</span>
                   </div>
                   <Input
                     value={c.name}
