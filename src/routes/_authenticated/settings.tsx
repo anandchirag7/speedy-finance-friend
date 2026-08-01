@@ -27,6 +27,8 @@ function SettingsPage() {
 
   const [waNumber, setWaNumber] = useState("");
   const [waEnabled, setWaEnabled] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+
 
   useEffect(() => {
     if (data) {
