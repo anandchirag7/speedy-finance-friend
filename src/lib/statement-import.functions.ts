@@ -283,14 +283,18 @@ function tokens(s: string): string[] {
     .filter((t) => t.length >= 3 && !/^\d+$/.test(t) && !PAYMENT_NOISE.has(t));
 }
 
-function cleanPayeeName(desc: string): string {
+/**
+ * Deterministically pull the most prominent (merchant-like) tokens out of a raw
+ * narration. This is the clustering primitive — no AI involved.
+ */
+function prominentTokens(desc: string): string[] {
   const withHandlesExpanded = comparable(desc).replace(/\b([A-Z0-9._-]{3,})@[A-Z0-9._-]+\b/g, " $1 ");
   const segments = withHandlesExpanded
     .split(/[\/|*:_\-]+/g)
     .map((s) => s.trim())
     .filter(Boolean);
 
-  let best = "";
+  let best: string[] = [];
   let bestScore = -1;
   for (const segment of segments.length ? segments : [withHandlesExpanded]) {
     const ts = tokens(segment);
@@ -299,11 +303,29 @@ function cleanPayeeName(desc: string): string {
     const score = alpha * 3 + Math.min(ts.join(" ").length, 24) - (segment.match(/\d/g)?.length ?? 0);
     if (score > bestScore) {
       bestScore = score;
-      best = ts.slice(0, 4).join(" ");
+      best = ts.slice(0, 4);
     }
   }
+  if (!best.length) best = tokens(normalizeDescForCluster(desc)).slice(0, 4);
+  return best;
+}
 
-  if (!best) best = tokens(normalizeDescForCluster(desc)).slice(0, 4).join(" ");
+/**
+ * Stable grouping key: the 1-2 most significant alphabetic tokens of the
+ * narration. "SWIGGY BANGALORE 8891" and "UPI/SWIGGY ORDER/xyz" collapse to
+ * the same key without any model call.
+ */
+function coreKey(desc: string): string {
+  const ts = prominentTokens(desc).filter((t) => /^[A-Z][A-Z0-9&]*$/.test(t));
+  if (!ts.length) return "";
+  const ranked = [...ts].sort((a, b) => b.length - a.length);
+  const primary = ranked[0];
+  const secondary = ts.find((t) => t !== primary && t.length >= 4);
+  return [primary, secondary].filter(Boolean).sort().join(" ");
+}
+
+function cleanPayeeName(desc: string): string {
+  const best = prominentTokens(desc).join(" ");
   return titleCase(best || desc.slice(0, 60)).slice(0, 80);
 }
 
