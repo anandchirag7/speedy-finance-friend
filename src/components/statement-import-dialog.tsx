@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Upload, Loader2, Trash2, Sparkles, Users, ChevronDown, ChevronRight, Search, Split, GitMerge, ArrowRight, Plus } from "lucide-react";
@@ -25,11 +25,16 @@ import {
 import { listAccounts } from "@/lib/finance.functions";
 import { StatementReviewTable } from "@/components/statement-review-table";
 import {
-  extractStatementRows,
-  clusterStatementPayees,
   polishPayeeNames,
   bulkInsertTransactions,
 } from "@/lib/statement-import.functions";
+import {
+  startStatementUpload,
+  saveMerchantCorrections,
+} from "@/lib/statement-pipeline.functions";
+import { titleCase } from "@/lib/statement-normalize";
+import { useStatementClassification } from "@/hooks/use-statement-classification";
+
 
 type ParsedTxn = {
   date: string;
@@ -38,12 +43,15 @@ type ParsedTxn = {
   type: "income" | "expense" | "transfer";
   suggestedCategory: string;
   payee: string;
+  pattern?: string;
 };
 
 type Category = { id: string; name: string; kind: string; parent_id: string | null };
 type ExistingPayee = { id: string; merchant: string; category_id: string | null };
 
 type PayeeCluster = {
+  pattern: string; // normalized merchant pattern this cluster came from
+  pendingAi: boolean; // waiting on background AI naming
   originalName: string; // AI-suggested name (used to remap rows)
   name: string; // user-editable final name
   descriptions: string[];
@@ -72,8 +80,8 @@ function readFileAsBase64(file: File): Promise<string> {
 }
 
 export function StatementImportDialog() {
-  const extractFn = useServerFn(extractStatementRows);
-  const clusterFn = useServerFn(clusterStatementPayees);
+  const startFn = useServerFn(startStatementUpload);
+  const correctionsFn = useServerFn(saveMerchantCorrections);
   const saveFn = useServerFn(bulkInsertTransactions);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
@@ -96,6 +104,35 @@ export function StatementImportDialog() {
   const [clusters, setClusters] = useState<PayeeCluster[]>([]);
   const [phase, setPhase] = useState<"idle" | "parsing" | "clustering">("idle");
   const [phaseStats, setPhaseStats] = useState<{ rows: number; unique: number } | null>(null);
+  const [uploadId, setUploadId] = useState<string | null>(null);
+  const classification = useStatementClassification(uploadId);
+
+  const categoryIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of categories) m.set(c.name.toLowerCase(), c.id);
+    return m;
+  }, [categories]);
+
+  // Background AI naming streams in — fill any cluster still waiting on a name.
+  useEffect(() => {
+    const resolved = classification.resolved;
+    if (!resolved || !Object.keys(resolved).length) return;
+    setClusters((prev) =>
+      prev.map((c) => {
+        const hit = resolved[c.pattern];
+        if (!c.pendingAi || !hit) return c;
+        return {
+          ...c,
+          name: hit.payee,
+          originalName: hit.payee,
+          pendingAi: false,
+          category_id:
+            c.category_id ??
+            (hit.category ? categoryIdByName.get(hit.category.toLowerCase()) ?? null : null),
+        };
+      }),
+    );
+  }, [classification.resolved, categoryIdByName]);
 
   const reset = () => {
     setStep("upload");
@@ -109,6 +146,7 @@ export function StatementImportDialog() {
     setClusters([]);
     setPhase("idle");
     setPhaseStats(null);
+    setUploadId(null);
   };
 
   const onUpload = async () => {
@@ -118,11 +156,13 @@ export function StatementImportDialog() {
     setParsing(true);
     setPhase("parsing");
     setPhaseStats(null);
+    setUploadId(null);
     try {
       const base64 = await readFileAsBase64(file);
 
-      // ---- Phase 1: extraction (fast for CSV/Excel) ----
-      const extracted = await extractFn({
+      // Fast path: parse -> normalize -> dedupe -> dictionary lookup.
+      // Unknown patterns are named by AI in the background.
+      const res = await startFn({
         data: {
           accountId,
           bank,
@@ -131,65 +171,78 @@ export function StatementImportDialog() {
           base64,
         },
       });
-      if (!extracted.transactions.length) {
+
+      if (!res.transactions.length) {
         toast.error("No transactions found in file");
         setPhase("idle");
         return;
       }
-      setCategories(extracted.categories);
-      setExistingPayees(extracted.existingPayees);
 
-      const rawParsed: ParsedTxn[] = extracted.transactions.map((t) => ({
+      setCategories(res.categories);
+      setExistingPayees(res.existingPayees);
+
+      const resolved = res.resolved as Record<
+        string,
+        { payee: string; category: string | null; source: string }
+      >;
+      const catByName = new Map<string, string>();
+      for (const c of res.categories) catByName.set(c.name.toLowerCase(), c.id);
+
+      const rawParsed: ParsedTxn[] = res.transactions.map((t) => ({
         date: t.date,
         description: t.description,
         amount: t.amount,
         type: t.type,
-        suggestedCategory: "",
-        payee: t.description,
+        pattern: t.pattern,
+        suggestedCategory: resolved[t.pattern]?.category ?? "",
+        payee: resolved[t.pattern]?.payee ?? titleCase(t.pattern),
       }));
       setRawTxns(rawParsed);
 
-      const uniqueDescriptions = Array.from(new Set(rawParsed.map((t) => t.description)));
-      setPhaseStats({ rows: rawParsed.length, unique: uniqueDescriptions.length });
+      // One cluster per normalized pattern
+      const grouped = new Map<string, { descriptions: string[]; type: ParsedTxn["type"] }>();
+      for (const t of rawParsed) {
+        const key = t.pattern ?? "MISC";
+        const g = grouped.get(key);
+        if (g) {
+          if (!g.descriptions.includes(t.description)) g.descriptions.push(t.description);
+        } else {
+          grouped.set(key, { descriptions: [t.description], type: t.type });
+        }
+      }
+      setPhaseStats({ rows: rawParsed.length, unique: grouped.size });
 
-      // ---- Phase 2: smart payee clustering ----
-      setPhase("clustering");
-      const { payees } = await clusterFn({
-        data: {
-          descriptions: uniqueDescriptions,
-          transactions: rawParsed.map((t) => ({ description: t.description, type: t.type })),
+      const initialClusters: PayeeCluster[] = Array.from(grouped.entries()).map(
+        ([pattern, group]) => {
+          const hit = resolved[pattern];
+          const name = hit?.payee ?? titleCase(pattern);
+          const existing = res.existingPayees.find(
+            (e) => e.merchant.toLowerCase() === name.toLowerCase(),
+          );
+          return {
+            pattern,
+            pendingAi: !hit,
+            originalName: name,
+            name,
+            descriptions: group.descriptions,
+            category_id:
+              existing?.category_id ??
+              (hit?.category ? catByName.get(hit.category.toLowerCase()) ?? null : null),
+            type: group.type,
+            saveAsPayee: !existing,
+            isExisting: !!existing,
+          };
         },
-      });
-
-      const initialClusters: PayeeCluster[] = payees.map((p) => {
-        const match = extracted.categories.find(
-          (c) => c.name.toLowerCase() === (p.suggestedCategory ?? "").toLowerCase(),
-        );
-        const existing = extracted.existingPayees.find(
-          (e) => e.merchant.toLowerCase() === p.name.toLowerCase(),
-        );
-        return {
-          originalName: p.name,
-          name: p.name,
-          descriptions: p.descriptions ?? [],
-          category_id: existing?.category_id ?? match?.id ?? null,
-          type: p.type,
-          saveAsPayee: !existing,
-          isExisting: !!existing || !!p.isExisting,
-        };
-      });
-
-      // Attach cluster suggestions back to raw txns for later category defaults
-      const byDesc = new Map<string, { name: string; category: string }>();
-      for (const p of payees) for (const d of p.descriptions ?? []) byDesc.set(d, { name: p.name, category: p.suggestedCategory ?? "" });
-      setRawTxns(rawParsed.map((t) => {
-        const hit = byDesc.get(t.description);
-        return hit ? { ...t, payee: hit.name, suggestedCategory: hit.category } : t;
-      }));
+      );
 
       setClusters(initialClusters);
+      setUploadId(res.uploadId);
       setStep("payees");
-      toast.success(`Clustered ${initialClusters.length} payees from ${rawParsed.length} transactions`);
+      const unknown = initialClusters.filter((c) => c.pendingAi).length;
+      toast.success(
+        `${rawParsed.length} transactions · ${initialClusters.length} payees` +
+          (unknown ? ` · naming ${unknown} new merchants in the background` : " · all recognised"),
+      );
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to parse statement");
     } finally {
@@ -208,9 +261,23 @@ export function StatementImportDialog() {
       const category_id = cluster?.category_id ?? null;
       return { ...t, merchant, category_id, include: true };
     });
+
+    // Teach the system: confirmed names become personal overrides + dictionary entries
+    const corrections = clusters
+      .filter((c) => c.pattern && c.name.trim() && !c.pendingAi)
+      .map((c) => ({
+        normalizedPattern: c.pattern,
+        payeeName: c.name.trim(),
+        category: categories.find((cat) => cat.id === c.category_id)?.name ?? null,
+      }));
+    if (corrections.length) {
+      void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
+    }
+
     setRows(mapped);
     setStep("mapping");
   };
+
 
   const onSave = async () => {
     const toSave = rows.filter((r) => r.include);
@@ -339,6 +406,21 @@ export function StatementImportDialog() {
                 {phase === "parsing" ? "Parsing…" : phase === "clustering" ? "Clustering…" : "Parse statement"}
               </Button>
             </DialogFooter>
+          </div>
+        )}
+
+        {step === "payees" && classification.status === "classifying" && (
+          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <span className="font-medium">Naming new merchants with AI…</span>
+            <span className="text-muted-foreground">
+              {clusters.filter((c) => c.pendingAi).length} left · runs in the background, safe to keep editing
+            </span>
+          </div>
+        )}
+        {step === "payees" && classification.status === "failed" && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            Background naming failed — you can still rename payees manually before saving.
           </div>
         )}
 
@@ -506,6 +588,8 @@ function PayeesStep({
     const src = clusters[fromIdx];
     const set = new Set(descs);
     const newCluster: PayeeCluster = {
+      pattern: "",
+      pendingAi: false,
       originalName: descs[0].slice(0, 60),
       name: descs[0].slice(0, 60),
       descriptions: descs,
