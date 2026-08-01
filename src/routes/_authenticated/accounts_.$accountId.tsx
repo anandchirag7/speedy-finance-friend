@@ -45,6 +45,8 @@ import {
 } from "@/lib/transactions.functions";
 import { AccountFormDialog } from "@/components/account-form-dialog";
 import { FastEntryDialog } from "@/components/fast-entry-dialog";
+import { AccountResetDialog } from "@/components/data-reset-dialog";
+
 
 export const Route = createFileRoute("/_authenticated/accounts_/$accountId")({
   head: ({ params }) => ({
