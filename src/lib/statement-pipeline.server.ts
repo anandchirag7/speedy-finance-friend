@@ -98,6 +98,8 @@ export async function runStatementUpload(opts: {
   transactions: PipelineTxn[];
   resolved: ResolvedMap;
   pending: PendingPattern[];
+  categories: Array<{ id: string; name: string; kind: string; parent_id: string | null }>;
+  existingPayees: Array<{ id: string; merchant: string; category_id: string | null }>;
 }> {
   const { supabase, userId, input, origin } = opts;
   const householdId = await getHouseholdId(supabase, userId);
@@ -183,7 +185,25 @@ export async function runStatementUpload(opts: {
       }).catch(() => undefined);
     }
 
-    return { uploadId, transactions, resolved, pending };
+    const [{ data: cats }, { data: payeeRows }] = await Promise.all([
+      supabase
+        .from("categories")
+        .select("id, name, kind, parent_id")
+        .eq("household_id", householdId),
+      supabase
+        .from("memorized_payees")
+        .select("id, merchant, category_id")
+        .eq("household_id", householdId),
+    ]);
+
+    return {
+      uploadId,
+      transactions,
+      resolved,
+      pending,
+      categories: (cats ?? []) as any,
+      existingPayees: (payeeRows ?? []) as any,
+    };
   } catch (e: any) {
     await fail(e?.message ?? "Statement processing failed");
     throw e;
