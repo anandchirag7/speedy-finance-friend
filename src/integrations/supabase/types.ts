@@ -611,6 +611,39 @@ export type Database = {
           },
         ]
       }
+      global_merchant_dictionary: {
+        Row: {
+          canonical_payee_name: string
+          confidence_source: Database["public"]["Enums"]["merchant_confidence_source"]
+          created_at: string
+          id: string
+          normalized_pattern: string
+          suggested_category: string | null
+          times_matched: number
+          updated_at: string
+        }
+        Insert: {
+          canonical_payee_name: string
+          confidence_source?: Database["public"]["Enums"]["merchant_confidence_source"]
+          created_at?: string
+          id?: string
+          normalized_pattern: string
+          suggested_category?: string | null
+          times_matched?: number
+          updated_at?: string
+        }
+        Update: {
+          canonical_payee_name?: string
+          confidence_source?: Database["public"]["Enums"]["merchant_confidence_source"]
+          created_at?: string
+          id?: string
+          normalized_pattern?: string
+          suggested_category?: string | null
+          times_matched?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       goal_accounts: {
         Row: {
           account_id: string
@@ -1417,6 +1450,59 @@ export type Database = {
         }
         Relationships: []
       }
+      statement_uploads: {
+        Row: {
+          created_at: string
+          error: string | null
+          filename: string
+          household_id: string | null
+          id: string
+          processed_transactions: number
+          result: Json
+          status: Database["public"]["Enums"]["statement_upload_status"]
+          total_transactions: number
+          unique_patterns: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          filename: string
+          household_id?: string | null
+          id?: string
+          processed_transactions?: number
+          result?: Json
+          status?: Database["public"]["Enums"]["statement_upload_status"]
+          total_transactions?: number
+          unique_patterns?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          filename?: string
+          household_id?: string | null
+          id?: string
+          processed_transactions?: number
+          result?: Json
+          status?: Database["public"]["Enums"]["statement_upload_status"]
+          total_transactions?: number
+          unique_patterns?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "statement_uploads_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transaction_activity: {
         Row: {
           action: string
@@ -1591,6 +1677,7 @@ export type Database = {
           is_reviewed: boolean
           memo: string | null
           merchant: string | null
+          normalized_pattern: string | null
           note: string | null
           payment_method: string | null
           split_parent_id: string | null
@@ -1621,6 +1708,7 @@ export type Database = {
           is_reviewed?: boolean
           memo?: string | null
           merchant?: string | null
+          normalized_pattern?: string | null
           note?: string | null
           payment_method?: string | null
           split_parent_id?: string | null
@@ -1651,6 +1739,7 @@ export type Database = {
           is_reviewed?: boolean
           memo?: string | null
           merchant?: string | null
+          normalized_pattern?: string | null
           note?: string | null
           payment_method?: string | null
           split_parent_id?: string | null
@@ -1698,6 +1787,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_payee_overrides: {
+        Row: {
+          category: string | null
+          created_at: string
+          id: string
+          normalized_pattern: string
+          payee_name: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          normalized_pattern: string
+          payee_name?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          normalized_pattern?: string
+          payee_name?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
@@ -1758,6 +1877,13 @@ export type Database = {
         | "chit_fund"
         | "other"
       app_role: "admin" | "member"
+      merchant_confidence_source: "seed" | "ai_classified" | "user_confirmed"
+      statement_upload_status:
+        | "parsing"
+        | "deduplicating"
+        | "classifying"
+        | "complete"
+        | "failed"
       txn_type: "income" | "expense" | "transfer"
     }
     CompositeTypes: {
@@ -1906,6 +2032,14 @@ export const Constants = {
         "other",
       ],
       app_role: ["admin", "member"],
+      merchant_confidence_source: ["seed", "ai_classified", "user_confirmed"],
+      statement_upload_status: [
+        "parsing",
+        "deduplicating",
+        "classifying",
+        "complete",
+        "failed",
+      ],
       txn_type: ["income", "expense", "transfer"],
     },
   },
