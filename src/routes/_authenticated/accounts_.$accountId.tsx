@@ -125,6 +125,7 @@ function AccountRegisterPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editAccountOpen, setEditAccountOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [density, setDensity] = useState<"compact" | "comfortable" | "spacious">("comfortable");
   const [chartTab, setChartTab] = useState<"balance" | "cashflow" | "compare" | "category">("balance");
