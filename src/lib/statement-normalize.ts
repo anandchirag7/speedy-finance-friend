@@ -225,7 +225,7 @@ export function normalizePattern(raw: string): string {
       .replace(/\d/g, " ")
       .replace(/[^A-Z& ]+/g, " ")
       .split(/\s+/)
-      .filter((t) => t.length > 1 && !NOISE_TOKENS.has(t))
+      .filter((t) => t.length > 1 && !NOISE_TOKENS.has(t) && !GEO_TOKENS.has(t))
       .slice(0, 4)
       .join(" ")
       .trim();
