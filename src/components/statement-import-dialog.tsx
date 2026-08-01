@@ -202,11 +202,12 @@ export function StatementImportDialog() {
       // One cluster per normalized pattern
       const grouped = new Map<string, { descriptions: string[]; type: ParsedTxn["type"] }>();
       for (const t of rawParsed) {
-        const g = grouped.get(t.pattern);
+        const key = t.pattern ?? "MISC";
+        const g = grouped.get(key);
         if (g) {
           if (!g.descriptions.includes(t.description)) g.descriptions.push(t.description);
         } else {
-          grouped.set(t.pattern, { descriptions: [t.description], type: t.type });
+          grouped.set(key, { descriptions: [t.description], type: t.type });
         }
       }
       setPhaseStats({ rows: rawParsed.length, unique: grouped.size });
