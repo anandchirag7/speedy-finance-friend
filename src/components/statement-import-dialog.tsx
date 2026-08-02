@@ -382,8 +382,9 @@ export function StatementImportDialog() {
     setStep("review");
   };
 
-  const onSave = async () => {
-    const toSave = rows.filter((r) => r.include);
+  const onSave = async (finalRows: ReviewRow[]) => {
+    setRows(finalRows);
+    const toSave = finalRows.filter((r) => r.include);
     if (!toSave.length) return toast.error("Nothing to save");
     setSaving(true);
     try {
@@ -515,7 +516,6 @@ export function StatementImportDialog() {
           {step === "review" && (
             <ReviewStep
               rows={rows}
-              setRows={setRows}
               categories={categories}
               saving={saving}
               onBack={() => setStep("confirm")}
