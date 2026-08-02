@@ -30,8 +30,8 @@ const listSchema = z
     search: z.string().optional(),
     tags: z.array(z.string()).optional(),
     limit: z.number().max(1000).default(500),
-  })
-  .default({});
+  });
+
 
 export const listTransactionsRich = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
