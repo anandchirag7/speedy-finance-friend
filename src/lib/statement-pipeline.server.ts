@@ -38,7 +38,16 @@ async function parseFile(
     lower.endsWith(".xls") ||
     input.mimeType.includes("spreadsheet") ||
     input.mimeType.includes("excel");
-  const isCsv = lower.endsWith(".csv") || input.mimeType.includes("csv");
+  const isCsv = lower.endsWith(".csv") || lower.endsWith(".txt") || input.mimeType.includes("csv");
+  const isOfx = lower.endsWith(".ofx") || lower.endsWith(".qfx");
+  const isQif = lower.endsWith(".qif");
+
+  if (isOfx || isQif) {
+    const { parseOfx, parseQif } = await import("./statement-parse-ofx.server");
+    const text = Buffer.from(input.base64, "base64").toString("utf-8");
+    return isOfx ? parseOfx(text) : parseQif(text);
+  }
+
 
   if (isExcel) {
     const XLSX = await import("xlsx");
@@ -85,7 +94,7 @@ async function parseFile(
     return transactions;
   }
 
-  throw new Error("Unsupported file type. Upload CSV, Excel, or PDF.");
+  throw new Error("Unsupported file type. Upload CSV, XLS, XLSX, PDF, OFX or QIF.");
 }
 
 export async function runStatementUpload(opts: {
