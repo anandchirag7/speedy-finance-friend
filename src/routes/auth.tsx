@@ -13,6 +13,10 @@ import { Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
+  validateSearch: (s: Record<string, unknown>): { next?: string } =>
+    typeof s.next === "string" && s.next.startsWith("/") && !s.next.startsWith("//")
+      ? { next: s.next }
+      : {},
   head: () => ({
     meta: [
       { title: "Sign in — Paisa" },
@@ -24,6 +28,12 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const router = useRouter();
+  const { next } = Route.useSearch();
+  const goNext = () => {
+    if (next) window.location.href = next;
+    else router.navigate({ to: "/", replace: true });
+  };
+  const returnUrl = () => (next ? `${window.location.origin}${next}` : window.location.origin);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +42,7 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.navigate({ to: "/", replace: true });
+      if (data.session) goNext();
     });
   }, [router]);
 
@@ -45,17 +55,17 @@ function AuthPage() {
           email,
           password,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: returnUrl(),
             data: { display_name: name || email.split("@")[0] },
           },
         });
         if (error) throw error;
         toast.success("Account created. Check your inbox if confirmation is required.");
-        router.navigate({ to: "/", replace: true });
+        goNext();
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.navigate({ to: "/", replace: true });
+        goNext();
       }
     } catch (e: any) {
       toast.error(e?.message ?? "Authentication failed");
@@ -67,7 +77,7 @@ function AuthPage() {
   const google = async () => {
     setBusy(true);
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+      redirect_uri: returnUrl(),
     });
     if (result.error) {
       toast.error(result.error.message ?? "Google sign-in failed");
@@ -75,7 +85,7 @@ function AuthPage() {
       return;
     }
     if (result.redirected) return;
-    router.navigate({ to: "/", replace: true });
+    goNext();
   };
 
   const tryDemo = async () => {
@@ -88,7 +98,7 @@ function AuthPage() {
       });
       if (error) throw error;
       toast.success(creds.seeded ? "Demo account ready with sample data" : "Signed in to demo account");
-      router.navigate({ to: "/", replace: true });
+      goNext();
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to load demo");
       setBusy(false);
