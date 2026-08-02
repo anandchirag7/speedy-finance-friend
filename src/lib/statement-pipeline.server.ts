@@ -94,7 +94,7 @@ async function parseFile(
     return transactions;
   }
 
-  throw new Error("Unsupported file type. Upload CSV, Excel, or PDF.");
+  throw new Error("Unsupported file type. Upload CSV, XLS, XLSX, PDF, OFX or QIF.");
 }
 
 export async function runStatementUpload(opts: {
