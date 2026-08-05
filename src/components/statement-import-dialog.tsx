@@ -415,6 +415,14 @@ export function StatementImportDialog() {
         `${txns.length.toLocaleString()} transactions · ${built.length} payee clusters` +
           (pending ? ` · naming ${pending} in the background` : " · all recognised"),
       );
+      notify("parsed", true, `Statement parsed — ${txns.length.toLocaleString()} transactions ready to review`, [
+        `File: ${file?.name ?? "statement"}`,
+        `Payee clusters: ${built.length}`,
+        (res as any).archived
+          ? "The original file was archived privately."
+          : "The original file was not archived (archiving is off).",
+        "Nothing has been saved yet — review and import in the app.",
+      ]);
     } catch (e: any) {
       if (controller.signal.aborted) {
         setOperation("Cancelled");
@@ -430,6 +438,10 @@ export function StatementImportDialog() {
         detail: e?.message ?? "Unknown error",
       });
       toast.error(e?.message ?? "Failed to parse statement");
+      notify("failed", false, "Statement parsing failed", [
+        `File: ${file?.name ?? "statement"}`,
+        `Error: ${e?.message ?? "Unknown error"}`,
+      ]);
       setStep("import");
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
