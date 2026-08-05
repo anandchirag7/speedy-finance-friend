@@ -480,7 +480,7 @@ export function StatementImportDialog() {
     }
   };
 
-  const onConfirmPayees = () => {
+  const onConfirmPayees = async () => {
     const byDesc = new Map<string, Cluster>();
     for (const c of clusters) for (const m of c.members) byDesc.set(m.description, c);
 
@@ -534,9 +534,9 @@ export function StatementImportDialog() {
         })),
       );
 
-    setRows(next);
+    const enriched = await explainAccountDuplicates(next);
+    setRows(enriched);
     setStep("review");
-    void explainAccountDuplicates(next);
   };
 
   /**
@@ -544,8 +544,8 @@ export function StatementImportDialog() {
    * returns the matched fields and a confidence so the preview can say exactly
    * why a row is being flagged instead of just "duplicate".
    */
-  const explainAccountDuplicates = async (candidates: ReviewRow[]) => {
-    if (!accountId || !candidates.length) return;
+  const explainAccountDuplicates = async (candidates: ReviewRow[]): Promise<ReviewRow[]> => {
+    if (!accountId || !candidates.length) return candidates;
     setDupScanning(true);
     try {
       const res: any = await explainDupFn({
@@ -569,29 +569,28 @@ export function StatementImportDialog() {
         reason: string;
         existing: { date: string; amount: number; merchant: string | null; note: string | null };
       }> = res?.verdicts ?? [];
-      if (!verdicts.length) return;
+      if (!verdicts.length) return candidates;
       const byKey = new Map(verdicts.map((v) => [v.key, v]));
-      setRows((prev) =>
-        prev.map((r) => {
-          const v = byKey.get(r.key);
-          if (!v) return r;
-          // An account-level match always wins: it is the reason a row is skipped.
-          return {
-            ...r,
-            duplicate: true,
-            include: v.confidence >= 0.8 ? false : r.include,
-            dup: {
-              scope: "account" as const,
-              confidence: v.confidence,
-              matchKeys: v.matchKeys,
-              reason: v.reason,
-              existing: v.existing,
-            },
-          };
-        }),
-      );
+      return candidates.map((r) => {
+        const v = byKey.get(r.key);
+        if (!v) return r;
+        // An account-level match always wins: it is the reason a row is skipped.
+        return {
+          ...r,
+          duplicate: true,
+          include: v.confidence >= 0.8 ? false : r.include,
+          dup: {
+            scope: "account" as const,
+            confidence: v.confidence,
+            matchKeys: v.matchKeys,
+            reason: v.reason,
+            existing: v.existing,
+          },
+        };
+      });
     } catch {
       // Non-fatal: duplicates simply stay unexplained.
+      return candidates;
     } finally {
       setDupScanning(false);
     }
