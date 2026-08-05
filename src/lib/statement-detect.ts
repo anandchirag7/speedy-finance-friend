@@ -292,11 +292,13 @@ export async function inspectStatementFile(
     estimatedRows = (sample.match(/^\^/gm) ?? []).length || null;
   } else if (format === "pdf" && pages) {
     estimatedRows = pages * 28;
-  } else if (format === "xlsx" || format === "xls") {
-    estimatedRows = Math.max(1, Math.round(file.size / 220));
+  } else if (isSheet) {
+    estimatedRows = sheet ? sheet.rows || null : Math.max(1, Math.round(file.size / 220));
   }
 
-  const period = isText || format === "pdf" ? detectPeriod(sample) : { start: null, end: null };
+  const period =
+    isText || format === "pdf" || sheet ? detectPeriod(sample) : { start: null, end: null };
+
 
   if (opts.seenFingerprints?.includes(fingerprint)) {
     issues.push({
