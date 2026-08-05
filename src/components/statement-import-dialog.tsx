@@ -265,6 +265,11 @@ export function StatementImportDialog() {
     setClusters([]);
     setRows([]);
     setUploadId(null);
+    uploadIdRef.current = null;
+    setImportToken(null);
+    setPreview(null);
+    setArchived(false);
+    setActivity({ kind: "idle" });
     setStats(emptyStats);
     setOperation("Waiting for a file");
     setElapsed(0);
@@ -274,6 +279,7 @@ export function StatementImportDialog() {
       Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
     );
   };
+
 
   const onParse = async () => {
     if (!accountId || !bank || !file) return;
