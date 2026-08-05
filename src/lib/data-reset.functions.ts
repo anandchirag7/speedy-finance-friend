@@ -305,8 +305,14 @@ export const resetHouseholdData = createServerFn({ method: "POST" })
       }
     }
 
-    return { ok: true, deleted: done };
+    await finishAudit(sb, auditId, { status: "success", deleted: done });
+    return { ok: true, deleted: done, auditId };
+    } catch (e: any) {
+      await finishAudit(sb, auditId, { status: "failed", deleted: done, error: String(e?.message ?? e) });
+      throw e;
+    }
   });
+
 
 export const resetAccountData = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
