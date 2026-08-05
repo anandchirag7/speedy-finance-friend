@@ -283,7 +283,10 @@ export function StatementImportDialog() {
 
   const onParse = async () => {
     if (!accountId || !bank || !file) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setParsing(true);
+    setActivity({ kind: "busy", label: `Parsing ${file.name}`, detail: "No data is saved during this step." });
     setStep("parsing");
     startedAt.current = Date.now();
     setElapsed(0);
@@ -293,6 +296,7 @@ export function StatementImportDialog() {
       setOperation(`Reading ${file.name}`);
       setStage("read", { state: "active" });
       const base64 = await readFileAsBase64(file);
+      if (controller.signal.aborted) return;
       setStage("read", { state: "done", ms: Date.now() - startedAt.current });
 
       setStage("table", { state: "active" });
@@ -307,12 +311,15 @@ export function StatementImportDialog() {
           mimeType: file.type || "application/octet-stream",
           base64,
         },
-      });
+        signal: controller.signal,
+      } as any);
+      if (controller.signal.aborted) return;
 
       for (const k of ["table", "rows", "columns", "parse"] as StageKey[]) {
         setStage(k, { state: "done" });
       }
       setStage("rows", { state: "done", processed: res.transactions.length, total: res.transactions.length });
+
 
       if (!res.transactions.length) {
         setStage("parse", { state: "error", detail: "no transactions found" });
