@@ -379,23 +379,56 @@ export function StatementImportDialog() {
 
       setClusters(built);
       setUploadId(res.uploadId);
+      uploadIdRef.current = res.uploadId;
+      setImportToken((res as any).importToken ?? null);
+      setArchived(!!(res as any).archived);
       if (detection?.fingerprint) {
         setSeenFingerprints((prev) => Array.from(new Set([...prev, detection.fingerprint])));
       }
       setStep("confirm");
+      setActivity({
+        kind: "ok",
+        label: `Parsed ${txns.length.toLocaleString()} transactions — nothing saved yet`,
+        detail:
+          (pending ? `Naming ${pending} payees in the background. ` : "All payees recognised. ") +
+          ((res as any).archived
+            ? "The original file was archived privately for audit and re-parse."
+            : "The original file was not archived (archiving is off in Settings)."),
+      });
       toast.success(
         `${txns.length.toLocaleString()} transactions · ${built.length} payee clusters` +
           (pending ? ` · naming ${pending} in the background` : " · all recognised"),
       );
     } catch (e: any) {
+      if (controller.signal.aborted) {
+        setOperation("Cancelled");
+        setActivity({ kind: "ok", label: "Import cancelled — nothing was saved" });
+        setStep("import");
+        return;
+      }
       setOperation("Failed");
       setStage("parse", { state: "error", detail: e?.message ?? "parse failed" });
+      setActivity({
+        kind: "error",
+        label: "Parsing failed — no transactions were saved",
+        detail: e?.message ?? "Unknown error",
+      });
       toast.error(e?.message ?? "Failed to parse statement");
       setStep("import");
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setParsing(false);
     }
   };
+
+  const onCancelParsing = () => {
+    abortInFlight("Cancelled by user");
+    setParsing(false);
+    setOperation("Cancelled");
+    setActivity({ kind: "ok", label: "Import cancelled — nothing was saved" });
+    setStep("import");
+  };
+
 
   const onPolish = async () => {
     const targets = clusters.filter((c) => c.status !== "ignored" && !c.isExisting);
