@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { FactoryResetDialog } from "@/components/data-reset-dialog";
+import { StatementArchiveCard } from "@/components/statement-archive-card";
+
 import { getMyProfile, updateMyProfile } from "@/lib/profile.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
