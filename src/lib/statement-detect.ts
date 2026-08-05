@@ -94,6 +94,40 @@ function readSlice(file: File, bytes: number): Promise<string> {
   });
 }
 
+/**
+ * Read a spreadsheet in the browser and flatten its cells into a text sample so
+ * bank / period / currency detection works the same way it does for CSV.
+ */
+async function readSpreadsheet(
+  file: File,
+): Promise<{ text: string; rows: number; sheets: number } | null> {
+  try {
+    const XLSX = await import("xlsx");
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array", cellDates: true, sheetRows: 5000 });
+    const parts: string[] = [];
+    let rows = 0;
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name];
+      if (!ws) continue;
+      parts.push(name);
+      const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+        header: 1,
+        raw: false,
+        defval: "",
+        blankrows: false,
+      });
+      rows += Math.max(0, aoa.length - 1);
+      for (const r of aoa) parts.push(r.map((c) => String(c ?? "")).join(","));
+      if (parts.length > 20000) break;
+    }
+    return { text: parts.join("\n"), rows, sheets: wb.SheetNames.length };
+  } catch {
+    return null;
+  }
+}
+
+
 /** Cheap stable fingerprint (name + size + head bytes) used for duplicate detection. */
 function fingerprintOf(file: File, sample: string): string {
   let h = 2166136261;
@@ -158,8 +192,12 @@ export async function inspectStatementFile(
   const format = formatOf(file);
   const issues: StatementIssue[] = [];
   const isText = format === "csv" || format === "ofx" || format === "qif";
-  const sample = await readSlice(file, isText || format === "pdf" ? 1_500_000 : 8192);
-  const fingerprint = fingerprintOf(file, sample);
+  const isSheet = format === "xlsx" || format === "xls";
+  const headSample = await readSlice(file, isText || format === "pdf" ? 1_500_000 : 8192);
+  const sheet = isSheet ? await readSpreadsheet(file) : null;
+  const sample = sheet ? sheet.text : headSample;
+  const fingerprint = fingerprintOf(file, headSample);
+
 
   if (format === "unknown") {
     issues.push({
@@ -196,9 +234,20 @@ export async function inspectStatementFile(
     pages = countMatch ? Number(countMatch[1]) : typePages || null;
   }
 
-  if (format === "xlsx" && !sample.startsWith("PK")) {
-    issues.push({ level: "error", code: "corrupt", message: "This XLSX file looks corrupted." });
+  if (isSheet) {
+    if (format === "xlsx" && !headSample.startsWith("PK")) {
+      issues.push({ level: "error", code: "corrupt", message: "This XLSX file looks corrupted." });
+    } else if (!sheet) {
+      issues.push({
+        level: "error",
+        code: "corrupt",
+        message: "Could not read this spreadsheet. It may be corrupted or password protected.",
+      });
+    } else {
+      pages = sheet.sheets || null;
+    }
   }
+
 
   // Bank detection
   let bank: string | null = null;
@@ -243,11 +292,13 @@ export async function inspectStatementFile(
     estimatedRows = (sample.match(/^\^/gm) ?? []).length || null;
   } else if (format === "pdf" && pages) {
     estimatedRows = pages * 28;
-  } else if (format === "xlsx" || format === "xls") {
-    estimatedRows = Math.max(1, Math.round(file.size / 220));
+  } else if (isSheet) {
+    estimatedRows = sheet ? sheet.rows || null : Math.max(1, Math.round(file.size / 220));
   }
 
-  const period = isText || format === "pdf" ? detectPeriod(sample) : { start: null, end: null };
+  const period =
+    isText || format === "pdf" || sheet ? detectPeriod(sample) : { start: null, end: null };
+
 
   if (opts.seenFingerprints?.includes(fingerprint)) {
     issues.push({
@@ -258,7 +309,7 @@ export async function inspectStatementFile(
   }
 
   const signals = [bank ? 1 : 0, currency ? 1 : 0, period.start ? 1 : 0, estimatedRows ? 1 : 0];
-  const base = isText ? 0.55 : format === "pdf" ? 0.45 : 0.3;
+  const base = isText || sheet ? 0.55 : format === "pdf" ? 0.45 : 0.3;
   const confidence = issues.some((i) => i.level === "error")
     ? 0
     : Math.min(0.98, base + signals.reduce((a, b) => a + b, 0) * 0.11);
