@@ -302,6 +302,8 @@ export function ConfirmStep({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [splitId, setSplitId] = useState<string | null>(null);
   const [splitPicked, setSplitPicked] = useState<string[]>([]);
+  const [moveTargetId, setMoveTargetId] = useState<string>("");
+
   const parentRef = useRef<HTMLDivElement>(null);
 
   const stats = useMemo(() => summarize(clusters), [clusters]);
