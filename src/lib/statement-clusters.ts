@@ -434,3 +434,47 @@ export function memberCohesion(c: Cluster): Map<string, number> {
   for (const m of c.members) out.set(m.description, patternSimilarity(rep, m.pattern));
   return out;
 }
+
+/** Move selected descriptions from one cluster into another existing cluster. */
+export function moveMembers(
+  all: Cluster[],
+  fromId: string,
+  descriptions: string[],
+  toId: string,
+): Cluster[] {
+  if (fromId === toId || !descriptions.length) return all;
+  const src = all.find((c) => c.id === fromId);
+  const dst = all.find((c) => c.id === toId);
+  if (!src || !dst) return all;
+  const move = new Set(descriptions);
+  const moved = src.members.filter((m) => move.has(m.description));
+  if (!moved.length) return all;
+  const kept = src.members.filter((m) => !move.has(m.description));
+
+  const mergedMembers = [...dst.members];
+  for (const m of moved) {
+    const hit = mergedMembers.findIndex((x) => x.description === m.description);
+    if (hit >= 0) {
+      const cur = mergedMembers[hit]!;
+      mergedMembers[hit] = { ...cur, count: cur.count + m.count, total: cur.total + m.total };
+    } else {
+      mergedMembers.push(m);
+    }
+  }
+  mergedMembers.sort((a, b) => b.count - a.count);
+
+  return all
+    .map((c) => {
+      if (c.id === fromId) return { ...c, members: kept, patterns: Array.from(new Set(kept.map((m) => m.pattern))) };
+      if (c.id === toId)
+        return {
+          ...c,
+          members: mergedMembers,
+          patterns: Array.from(new Set(mergedMembers.map((m) => m.pattern))),
+          status: "approved" as ClusterStatus,
+          source: c.source === "pending" ? ("manual" as MatchSource) : c.source,
+        };
+      return c;
+    })
+    .filter((c) => c.members.length > 0);
+}
