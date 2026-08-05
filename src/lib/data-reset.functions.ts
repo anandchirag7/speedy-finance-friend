@@ -339,12 +339,27 @@ export const resetAccountData = createServerFn({ method: "POST" })
 
     const { data: acct, error: acctErr } = await sb
       .from("accounts")
-      .select("id, opening_balance")
+      .select("id, name, opening_balance")
       .eq("id", id)
       .eq("household_id", hh)
       .maybeSingle();
     if (acctErr) throw acctErr;
     if (!acct) throw new Error("Account not found");
+
+    const scopeList = (["transactions", "bills", "payees", "investments", "recurring"] as const).filter(
+      (k) => data[k] || data.deleteAccount,
+    );
+    const auditId = await logAudit(sb, {
+      household_id: hh,
+      actor_id: context.userId,
+      kind: data.deleteAccount ? "account_delete" : "account",
+      scopes: scopeList,
+      account_id: id,
+      account_name: (acct as any).name ?? null,
+      status: "running",
+    });
+    try {
+
 
     if (data.transactions || data.deleteAccount) {
       const { data: txns } = await sb
