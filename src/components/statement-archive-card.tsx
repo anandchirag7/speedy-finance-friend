@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Archive, Download, RefreshCw, Broom, FileClock } from "lucide-react";
+import { Archive, Download, RefreshCw, Eraser, FileClock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -177,7 +177,7 @@ export function StatementArchiveCard() {
 
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => prune.mutate()} disabled={prune.isPending}>
-            <Broom className="mr-1.5 h-4 w-4" aria-hidden />
+            <Eraser className="mr-1.5 h-4 w-4" aria-hidden />
             {prune.isPending ? "Cleaning…" : "Delete expired now"}
           </Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>
