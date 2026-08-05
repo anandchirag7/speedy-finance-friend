@@ -105,7 +105,10 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
+      <StatementArchiveCard />
+
       <Card>
+
         <CardHeader>
           <CardTitle>Privacy</CardTitle>
           <CardDescription>App-lock and biometric protection.</CardDescription>
