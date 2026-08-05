@@ -38,7 +38,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { listAccounts } from "@/lib/finance.functions";
-import { polishPayeeNames, bulkInsertTransactions } from "@/lib/statement-import.functions";
+import { polishPayeeNames, bulkInsertTransactions, inspectStatementWithAI } from "@/lib/statement-import.functions";
+import { quickSavePayee } from "@/lib/memorized-payees.functions";
 import { startStatementUpload, saveMerchantCorrections } from "@/lib/statement-pipeline.functions";
 import { cancelStatementUpload } from "@/lib/statement-archive.functions";
 import {
@@ -166,6 +167,7 @@ export function StatementImportDialog() {
   const correctionsFn = useServerFn(saveMerchantCorrections);
   const saveFn = useServerFn(bulkInsertTransactions);
   const polishFn = useServerFn(polishPayeeNames);
+  const inspectAiFn = useServerFn(inspectStatementWithAI);
   const cancelFn = useServerFn(cancelStatementUpload);
   const explainDupFn = useServerFn(explainImportDuplicates);
   const notifyFn = useServerFn(notifyImportEvent);
@@ -841,6 +843,28 @@ export function StatementImportDialog() {
 
 
   const clusterStats = useMemo(() => summarize(clusters), [clusters]);
+  const quickSaveFn = useServerFn(quickSavePayee);
+
+  const handleSavePayeeToBackend = async (c: Cluster) => {
+    try {
+      const aliases = c.members.map((m) => m.description);
+      await quickSaveFn({
+        data: {
+          merchant: c.name.trim(),
+          category_id: c.category_id ?? undefined,
+          txn_type: c.type,
+          aliases,
+        },
+      });
+      toast.success(`Saved “${c.name}” to payees database`);
+      qc.invalidateQueries({ queryKey: ["memorized_payees"] });
+      setClusters((prev) =>
+        prev.map((item) => (item.id === c.id ? { ...item, isExisting: true } : item)),
+      );
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to save payee");
+    }
+  };
 
   return (
     <Dialog
@@ -859,8 +883,6 @@ export function StatementImportDialog() {
         if (!v) reset();
       }}
     >
-
-
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Upload className="mr-2 h-4 w-4" /> Import statement
@@ -901,9 +923,53 @@ export function StatementImportDialog() {
               bank={bank}
               setBank={setBank}
               file={file}
-              onFile={(f, d) => {
+              onFile={async (f, d) => {
                 setFile(f);
                 setDetection(d);
+                if (f && d && (d.format === "pdf" || d.format === "csv" || d.format === "xlsx" || d.format === "xls")) {
+                  void (async () => {
+                    try {
+                      const sampleText = await f.slice(0, 8000).text();
+                      const aiRes: any = await inspectAiFn({
+                        data: {
+                          fileName: f.name,
+                          mimeType: f.type || "application/octet-stream",
+                          sampleText,
+                        },
+                      }).catch(() => null);
+                      if (aiRes) {
+                        setDetection((prev) => {
+                          const base = prev ?? {
+                            format: d.format,
+                            sizeBytes: f.size,
+                            bank: null,
+                            bankConfidence: 0,
+                            currency: null,
+                            periodStart: null,
+                            periodEnd: null,
+                            pages: null,
+                            estimatedRows: null,
+                            confidence: 0.5,
+                            fingerprint: "",
+                            issues: [],
+                          };
+                          return {
+                            ...base,
+                            bank: aiRes.bank || base.bank,
+                            currency: aiRes.currency || base.currency,
+                            periodStart: aiRes.periodStart || base.periodStart,
+                            periodEnd: aiRes.periodEnd || base.periodEnd,
+                            estimatedRows: aiRes.estimatedRows || base.estimatedRows,
+                            confidence: Math.max(base.confidence, 0.95),
+                          };
+                        });
+                        if (aiRes.bank) setBank(aiRes.bank);
+                      }
+                    } catch (e) {
+                      console.warn("AI metadata inspection failed fallback to regex", e);
+                    }
+                  })();
+                }
               }}
               detection={detection}
               inspecting={false}
@@ -938,6 +1004,8 @@ export function StatementImportDialog() {
               aiRemaining={aiRemaining}
               polishing={polishing}
               onPolish={onPolish}
+              onSavePayee={(cl) => void handleSavePayeeToBackend(cl)}
+              onCategoryCreated={(newCat) => setCategories((prev) => [...prev, newCat as Category])}
               onBack={() => setStep("import")}
               onContinue={() => void onConfirmPayees()}
             />

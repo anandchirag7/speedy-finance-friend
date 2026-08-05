@@ -273,6 +273,93 @@ const parseInput = z.object({
   base64: z.string(),
 });
 
+// ---------- AI Statement Metadata Inspection ----------
+
+const inspectAiInput = z.object({
+  fileName: z.string(),
+  mimeType: z.string(),
+  sampleText: z.string(),
+});
+
+export const inspectStatementWithAI = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => inspectAiInput.parse(d))
+  .handler(async ({ data }) => {
+    const apiKey = process.env.LOVABLE_API_KEY;
+    const baseURL = process.env.OLLAMA_BASE_URL || "https://ai.gateway.lovable.dev/v1";
+    const model = process.env.OLLAMA_MODEL || "google/gemini-2.5-flash";
+
+    if (!apiKey && !process.env.OLLAMA_BASE_URL) return null;
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["Lovable-API-Key"] = apiKey;
+
+    try {
+      const res = await fetch(`${baseURL}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert financial document parser. Analyze the provided bank or credit card statement content (file name and raw sample text) and extract statement metadata.
+Return ONLY a valid JSON object matching this exact schema without markdown wrap or extra commentary:
+{
+  "bank": string or null (e.g. "HDFC Bank", "ICICI Bank", "State Bank of India", "Axis Bank", "Kotak Mahindra", "American Express", "Citibank", "IDFC First", "Yes Bank", "IndusInd", "HSBC", "Standard Chartered"),
+  "currency": string or null (e.g. "INR", "USD", "EUR", "GBP", "AED", "SGD"),
+  "periodStart": string or null (ISO date "YYYY-MM-DD" representing statement start date or earliest transaction date),
+  "periodEnd": string or null (ISO date "YYYY-MM-DD" representing statement end date or latest transaction date),
+  "estimatedRows": number or null (estimated total count of financial transaction line items)
+}
+
+Rules:
+- Search for dates in headers, titles, or date columns (e.g. "01/04/2024 to 30/04/2024", "Statement Date: 15-May-2024").
+- Standardize all dates to YYYY-MM-DD format.
+- If bank name is obvious from header or filename, use standard commercial bank name.`,
+            },
+            {
+              role: "user",
+              content: `Filename: ${data.fileName}\nContent Sample:\n${data.sampleText.slice(0, 6000)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      if (!res.ok) return { bank: null, currency: null, periodStart: null, periodEnd: null, estimatedRows: null };
+      const json = await res.json();
+      const text = json.choices?.[0]?.message?.content ?? "";
+      let parsed = salvageJson(text) ?? (typeof json === "object" ? json : null);
+
+      if (typeof parsed === "string") {
+        parsed = salvageJson(parsed);
+      }
+
+      if (!parsed) return { bank: null, currency: null, periodStart: null, periodEnd: null, estimatedRows: null };
+
+      // Normalize ISO dates if needed
+      const normalizeDate = (d: any): string | null => {
+        if (typeof d !== "string" || !d.trim()) return null;
+        const str = d.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+        const dt = new Date(str);
+        if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
+        return null;
+      };
+
+      return {
+        bank: typeof parsed.bank === "string" && parsed.bank.trim() ? parsed.bank.trim() : null,
+        currency: typeof parsed.currency === "string" && parsed.currency.trim() ? parsed.currency.trim().toUpperCase() : null,
+        periodStart: normalizeDate(parsed.periodStart),
+        periodEnd: normalizeDate(parsed.periodEnd),
+        estimatedRows: typeof parsed.estimatedRows === "number" ? parsed.estimatedRows : (typeof parsed.estimatedRows === "string" ? parseInt(parsed.estimatedRows, 10) || null : null),
+      };
+    } catch {
+      return { bank: null, currency: null, periodStart: null, periodEnd: null, estimatedRows: null };
+    }
+  });
+
 /**
  * Step 1: fast deterministic extraction (CSV/Excel) or AI extraction (PDF).
  * No payee clustering — returns raw transactions + reference data for step 2.
@@ -323,7 +410,7 @@ export const extractStatementRows = createServerFn({ method: "POST" })
       extracted = extractRowsFromAOA(aoa);
     } else if (isPdf) {
       const apiKey = process.env.LOVABLE_API_KEY;
-      if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+      if (!apiKey && !process.env.OLLAMA_BASE_URL) throw new Error("Missing LOVABLE_API_KEY or OLLAMA_BASE_URL");
       const categoryList = (cats ?? []).map((c: any) => c.name).join(", ");
       const { transactions } = await parsePdfWithAI(
         data.base64,
@@ -415,17 +502,23 @@ export const polishPayeeNames = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => polishInput.parse(d))
   .handler(async ({ data }) => {
     const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+    const baseURL = process.env.OLLAMA_BASE_URL || "https://ai.gateway.lovable.dev/v1";
+    const model = process.env.OLLAMA_MODEL || "google/gemini-2.5-flash";
+
+    if (!apiKey && !process.env.OLLAMA_BASE_URL) throw new Error("Missing LOVABLE_API_KEY or OLLAMA_BASE_URL");
 
     const lines = data.clusters
       .map((c, i) => `${i}| ${c.name} | ${c.count} txns | e.g. ${c.sample.slice(0, 120)}`)
       .join("\n");
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["Lovable-API-Key"] = apiKey;
+
+    const res = await fetch(`${baseURL}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+      headers,
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model,
         messages: [
           {
             role: "system",

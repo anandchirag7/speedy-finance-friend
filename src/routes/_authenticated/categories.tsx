@@ -22,6 +22,7 @@ import {
   Receipt,
   FolderTree,
   Info,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -320,20 +321,41 @@ function CategoriesPage() {
                   Organize how money moves — group transactions, map to tax codes, and keep your books tidy.
                 </p>
               </div>
-              <Button
-                onClick={() =>
-                  setEditing({
-                    name: "",
-                    kind: scope.includes("income") ? "income" : "expense",
-                    scope: scope.startsWith("biz") ? "business" : "personal",
-                    is_hidden: false,
-                    sort_order: 0,
-                  })
-                }
-                className="hidden md:inline-flex"
-              >
-                <Plus className="mr-1.5 h-4 w-4" /> Add Category
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (window.confirm("Re-insert default categories (Food, Transport, Housing, Salary, etc.)?")) {
+                      try {
+                        const { seedDefaultCategories } = await import("@/lib/categories.functions");
+                        await seedDefaultCategories();
+                        toast.success("Default categories re-inserted!");
+                        qc.invalidateQueries({ queryKey: ["categories-full"] });
+                        qc.invalidateQueries({ queryKey: ["categories"] });
+                      } catch (e: any) {
+                        toast.error(e?.message ?? "Failed to seed default categories");
+                      }
+                    }
+                  }}
+                  className="hidden md:inline-flex"
+                >
+                  <RefreshCw className="mr-1.5 h-4 w-4" /> Reset / Seed Defaults
+                </Button>
+                <Button
+                  onClick={() =>
+                    setEditing({
+                      name: "",
+                      kind: scope.includes("income") ? "income" : "expense",
+                      scope: scope.startsWith("biz") ? "business" : "personal",
+                      is_hidden: false,
+                      sort_order: 0,
+                    })
+                  }
+                  className="hidden md:inline-flex"
+                >
+                  <Plus className="mr-1.5 h-4 w-4" /> Add Category
+                </Button>
+              </div>
             </div>
 
             {/* Toolbar */}

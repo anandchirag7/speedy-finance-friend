@@ -182,3 +182,59 @@ export const listAccountsForPayees = createServerFn({ method: "GET" })
     if (error) throw error;
     return data ?? [];
   });
+
+export const quickSavePayee = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      merchant: z.string().min(1).max(200),
+      category_id: z.string().uuid().nullable().optional(),
+      txn_type: z.enum(["expense", "income", "transfer"]).optional(),
+      aliases: z.array(z.string()).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ context, data }) => {
+    const householdId = await getHouseholdId(context);
+
+    const { data: existing } = await context.supabase
+      .from("memorized_payees")
+      .select("id, aliases")
+      .eq("household_id", householdId)
+      .ilike("merchant", data.merchant.trim())
+      .maybeSingle();
+
+    if (existing) {
+      const curAliases = Array.isArray(existing.aliases) ? existing.aliases : [];
+      const newAliases = Array.from(new Set([...curAliases, ...(data.aliases ?? [])]));
+      const { data: updated, error } = await context.supabase
+        .from("memorized_payees")
+        .update({
+          category_id: data.category_id ?? undefined,
+          txn_type: data.txn_type ?? "expense",
+          aliases: newAliases,
+          modified_by: context.userId,
+        })
+        .eq("id", existing.id)
+        .select("id, merchant, category_id, txn_type")
+        .single();
+      if (error) throw error;
+      return updated;
+    }
+
+    const { data: created, error } = await context.supabase
+      .from("memorized_payees")
+      .insert({
+        household_id: householdId,
+        merchant: data.merchant.trim(),
+        category_id: data.category_id ?? null,
+        txn_type: data.txn_type ?? "expense",
+        aliases: data.aliases ?? [],
+        created_by: context.userId,
+        modified_by: context.userId,
+      })
+      .select("id, merchant, category_id, txn_type")
+      .single();
+
+    if (error) throw error;
+    return created;
+  });

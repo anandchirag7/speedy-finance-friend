@@ -222,8 +222,11 @@ export async function parsePdfWithAI(
   bank: string,
   categoryList: string,
   payeeList: string,
-  apiKey: string,
+  apiKey?: string,
 ): Promise<{ transactions: ExtractedTxn[] }> {
+  const baseURL = process.env.OLLAMA_BASE_URL || "https://ai.gateway.lovable.dev/v1";
+  const model = process.env.OLLAMA_MODEL || "google/gemini-2.5-flash";
+
   const systemPrompt = `You extract bank/credit-card statement transactions from a PDF.
 Bank: ${bank}
 Available categories: ${categoryList}
@@ -237,11 +240,14 @@ Rules:
 - Ignore balance/header/footer rows
 - Do not invent transactions`;
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) headers["Lovable-API-Key"] = apiKey;
+
+  const res = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+    headers,
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         {

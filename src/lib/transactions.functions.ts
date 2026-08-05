@@ -346,7 +346,8 @@ export const deleteView = createServerFn({ method: "POST" })
 
 // ---------- AI insights ----------
 const insightsInput = z.object({
-  window: z.enum(["30d", "90d", "6m", "1y"]).default("30d"),
+  window: z.enum(["30d", "90d", "6m", "1y", "all"]).default("all"),
+  accountIds: z.array(z.string().uuid()).optional(),
 });
 
 export const generateAIInsights = createServerFn({ method: "POST" })
@@ -354,20 +355,26 @@ export const generateAIInsights = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => insightsInput.parse(d ?? {}))
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
-    const now = new Date();
-    const start = new Date(now);
-    if (data.window === "30d") start.setDate(start.getDate() - 30);
-    else if (data.window === "90d") start.setDate(start.getDate() - 90);
-    else if (data.window === "6m") start.setMonth(start.getMonth() - 6);
-    else start.setFullYear(start.getFullYear() - 1);
-    const startStr = start.toISOString().slice(0, 10);
-
-    const { data: rows } = await context.supabase
+    let q = context.supabase
       .from("transactions")
       .select("type, amount, txn_date, merchant, category:categories(name)")
-      .eq("household_id", householdId)
-      .gte("txn_date", startStr)
-      .limit(2000);
+      .eq("household_id", householdId);
+
+    if (data.accountIds && data.accountIds.length > 0) {
+      q = q.in("account_id", data.accountIds);
+    }
+
+    if (data.window !== "all") {
+      const now = new Date();
+      const start = new Date(now);
+      if (data.window === "30d") start.setDate(start.getDate() - 30);
+      else if (data.window === "90d") start.setDate(start.getDate() - 90);
+      else if (data.window === "6m") start.setMonth(start.getMonth() - 6);
+      else if (data.window === "1y") start.setFullYear(start.getFullYear() - 1);
+      q = q.gte("txn_date", start.toISOString().slice(0, 10));
+    }
+
+    const { data: rows } = await q.order("txn_date", { ascending: false }).limit(2000);
 
     const bag = (rows ?? []).map((r: any) => ({
       d: r.txn_date,
@@ -378,62 +385,41 @@ export const generateAIInsights = createServerFn({ method: "POST" })
     }));
 
     const key = process.env.LOVABLE_API_KEY;
-    if (!key) {
+    const baseURL = process.env.OLLAMA_BASE_URL || "https://ai.gateway.lovable.dev/v1";
+    const model = process.env.OLLAMA_MODEL || "google/gemini-2.5-flash";
+
+    if (!key && !process.env.OLLAMA_BASE_URL) {
       return { insights: heuristicInsights(bag) };
     }
 
-    const systemPrompt = `You are a personal finance analyst. Return 4-6 concise, high-signal, actionable insights.
-Each item: {"severity":"info|warning|success","title":"...","detail":"..."}
-Rules: no fluff, use ₹ for amounts, be specific with numbers/merchants/categories, one sentence detail max.`;
+    const systemPrompt = `You are a personal finance analyst. Analyze the provided transactions and return 4-6 concise, high-signal, actionable insights as a JSON object.
+JSON Format: {"insights":[{"severity":"info|warning|success","title":"...","detail":"..."}]}
+Rules: no fluff, use ₹ for amounts, be specific with numbers/merchants/categories, one sentence detail max. Return ONLY valid JSON.`;
 
-    const userPrompt = `Transactions (last ${data.window}, INR):\n${JSON.stringify(bag).slice(0, 15000)}`;
+    const userPrompt = `Transactions (${bag.length} items):\n${JSON.stringify(bag).slice(0, 15000)}`;
+
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (key) headers["Lovable-API-Key"] = key;
 
     try {
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const res = await fetch(`${baseURL}/chat/completions`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Lovable-API-Key": key,
-        },
+        headers,
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "insights",
-              schema: {
-                type: "object",
-                properties: {
-                  insights: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        severity: { type: "string", enum: ["info", "warning", "success"] },
-                        title: { type: "string" },
-                        detail: { type: "string" },
-                      },
-                      required: ["severity", "title", "detail"],
-                      additionalProperties: false,
-                    },
-                  },
-                },
-                required: ["insights"],
-                additionalProperties: false,
-              },
-              strict: true,
-            },
-          },
+          response_format: { type: "json_object" },
         }),
       });
+
       if (!res.ok) return { insights: heuristicInsights(bag) };
       const j = await res.json();
       const content = j?.choices?.[0]?.message?.content ?? "{}";
-      const parsed = JSON.parse(content);
+      const { salvageJson } = await import("./statement-parse.server");
+      const parsed = salvageJson(content) ?? JSON.parse(content);
       return { insights: parsed.insights ?? heuristicInsights(bag) };
     } catch {
       return { insights: heuristicInsights(bag) };

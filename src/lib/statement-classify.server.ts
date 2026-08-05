@@ -102,7 +102,10 @@ const CONCURRENCY = 4;
 type Sample = { pattern: string; samples: string[]; type: string };
 
 /** Ask the model to name + categorise one batch of unknown patterns. */
-async function classifyBatch(batch: Sample[], apiKey: string): Promise<ResolvedMap> {
+async function classifyBatch(batch: Sample[], apiKey?: string): Promise<ResolvedMap> {
+  const baseURL = process.env.OLLAMA_BASE_URL || "https://ai.gateway.lovable.dev/v1";
+  const model = process.env.OLLAMA_MODEL || AI_MODEL;
+
   const system = `You label bank statement merchant patterns.
 For each input pattern return the clean, human-readable merchant/payee name and one category.
 Allowed categories: ${PIPELINE_CATEGORIES.join(", ")}.
@@ -117,11 +120,14 @@ Rules:
     patterns: batch.map((b) => ({ pattern: b.pattern, examples: b.samples.slice(0, 2), type: b.type })),
   });
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) headers["Lovable-API-Key"] = apiKey;
+
+  const res = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Lovable-API-Key": apiKey },
+    headers,
     body: JSON.stringify({
-      model: AI_MODEL,
+      model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -163,7 +169,7 @@ export async function classifyPendingPatterns(opts: {
   admin: any;
   uploadId: string;
   pending: Sample[];
-  apiKey: string;
+  apiKey?: string;
 }): Promise<ResolvedMap> {
   const { admin, uploadId, pending, apiKey } = opts;
   const batches = chunk(pending, BATCH_SIZE);

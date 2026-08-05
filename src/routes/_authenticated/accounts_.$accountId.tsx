@@ -208,7 +208,7 @@ function AccountRegisterPage() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const runInsights = async () => {
     setInsightsLoading(true);
-    try { const r = await aiFn({ data: { window: "30d", accountIds: [accountId] } as any }); setInsights((r as any).insights); }
+    try { const r = await aiFn({ data: { window: "all", accountIds: [accountId] } as any }); setInsights((r as any).insights); }
     catch { toast.error("Couldn't generate insights"); } finally { setInsightsLoading(false); }
   };
 
@@ -482,7 +482,7 @@ function AccountRegisterPage() {
           </div>
 
           {/* AI insights */}
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="flex flex-col rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
@@ -492,23 +492,32 @@ function AccountRegisterPage() {
                 {insightsLoading ? "Analyzing…" : "Generate"}
               </Button>
             </div>
-            <div className="mt-3 space-y-2">
-              {insights?.length ? insights.map((it, i) => (
-                <div key={i} className={cn(
-                  "rounded-lg border p-3 text-sm",
-                  it.severity === "warning" && "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30",
-                  it.severity === "success" && "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30",
-                  it.severity === "info" && "bg-muted/30",
-                )}>
-                  <p className="font-medium">{it.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{it.detail}</p>
-                </div>
-              )) : (
-                <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Tap Generate for personalized observations on cash flow, subscriptions, unusual spend, and savings signal.
-                </p>
-              )}
-            </div>
+            <ScrollArea className="mt-3 h-[280px] pr-2">
+              <div className="space-y-2">
+                {insights?.length ? (
+                  insights.map((it, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "rounded-lg border p-3 text-sm",
+                        it.severity === "warning" &&
+                          "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30",
+                        it.severity === "success" &&
+                          "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30",
+                        it.severity === "info" && "bg-muted/30",
+                      )}
+                    >
+                      <p className="font-medium">{it.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{it.detail}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+                    Tap Generate for personalized observations on cash flow, subscriptions, unusual spend, and savings signal.
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
           </div>
         </div>
 

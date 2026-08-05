@@ -123,3 +123,72 @@ export const duplicateCategory = createServerFn({ method: "POST" })
     if (error) throw error;
     return saved;
   });
+
+const DEFAULT_CATEGORIES = [
+  { name: "Food & Dining", kind: "expense", subs: ["Groceries", "Eating Out", "Food Delivery"] },
+  { name: "Transport", kind: "expense", subs: ["Fuel", "Auto/Cab", "Public Transport", "Vehicle Maintenance"] },
+  { name: "Housing", kind: "expense", subs: ["Rent", "Maintenance/Society", "Electricity", "Water", "Gas"] },
+  { name: "Household Help", kind: "expense", subs: ["Maid", "Cook", "Driver"] },
+  { name: "Communication", kind: "expense", subs: ["Mobile", "Internet", "DTH/OTT"] },
+  { name: "Health", kind: "expense", subs: ["Doctor", "Medicines", "Health Insurance"] },
+  { name: "Education", kind: "expense", subs: ["Fees", "Tuition", "Books"] },
+  { name: "Family & Festivals", kind: "expense", subs: ["Weddings", "Festival Shopping", "Gifting", "Pooja/Religious"] },
+  { name: "EMIs & Loans", kind: "expense", subs: [] },
+  { name: "Investments & Savings", kind: "expense", subs: ["SIP", "Lumpsum", "PPF", "NPS"] },
+  { name: "Personal Care", kind: "expense", subs: [] },
+  { name: "Shopping", kind: "expense", subs: ["Clothing", "Electronics", "Online Shopping"] },
+  { name: "Travel & Vacation", kind: "expense", subs: [] },
+  { name: "Entertainment", kind: "expense", subs: [] },
+  { name: "Taxes", kind: "expense", subs: [] },
+  { name: "Insurance Premiums", kind: "expense", subs: [] },
+  { name: "Charity/Donation", kind: "expense", subs: [] },
+  { name: "Miscellaneous", kind: "expense", subs: [] },
+  { name: "Salary", kind: "income", subs: [] },
+  { name: "Business Income", kind: "income", subs: [] },
+  { name: "Interest", kind: "income", subs: [] },
+  { name: "Dividends", kind: "income", subs: [] },
+  { name: "Rental Income", kind: "income", subs: [] },
+  { name: "Other Income", kind: "income", subs: [] },
+];
+
+export const seedDefaultCategories = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const householdId = await getHouseholdId(context);
+
+    // Try RPC first
+    const { error: rpcError } = await context.supabase.rpc("seed_default_categories", {
+      _household_id: householdId,
+    });
+
+    if (!rpcError) return { ok: true };
+
+    // Fallback: Direct table insertion
+    for (const item of DEFAULT_CATEGORIES) {
+      const { data: parent, error: pErr } = await context.supabase
+        .from("categories")
+        .insert({
+          household_id: householdId,
+          name: item.name,
+          kind: item.kind,
+          is_system: true,
+        })
+        .select("id")
+        .single();
+
+      if (pErr) continue;
+
+      if (item.subs.length > 0 && parent?.id) {
+        const subRows = item.subs.map((s) => ({
+          household_id: householdId,
+          parent_id: parent.id,
+          name: s,
+          kind: item.kind,
+          is_system: true,
+        }));
+        await context.supabase.from("categories").insert(subRows);
+      }
+    }
+
+    return { ok: true };
+  });

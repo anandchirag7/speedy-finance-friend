@@ -89,34 +89,32 @@ function StatTile({
   );
 }
 
+import { CategorySelectPopover, type CategoryItem } from "@/components/category-select-popover";
+
 function CategorySelect({
   categories,
   value,
   onChange,
+  onCategoryCreated,
 }: {
   categories: Category[];
   value: string | null;
   onChange: (v: string | null) => void;
+  onCategoryCreated?: (c: CategoryItem) => void;
 }) {
   return (
-    <Select value={value ?? "none"} onValueChange={(v) => onChange(v === "none" ? null : v)}>
-      <SelectTrigger className="h-7 w-full text-xs" aria-label="Category">
-        <SelectValue placeholder="Category" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="none">Uncategorized</SelectItem>
-        {categories.map((c) => (
-          <SelectItem key={c.id} value={c.id}>
-            {c.parent_id ? `— ${c.name}` : c.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <CategorySelectPopover
+      categories={categories}
+      value={value}
+      onChange={onChange}
+      onCategoryCreated={onCategoryCreated}
+    />
   );
 }
 
 function ClusterCard({
   cluster,
+  clusters,
   categories,
   selected,
   expanded,
@@ -124,8 +122,12 @@ function ClusterCard({
   onToggleExpand,
   onPatch,
   onSplit,
+  onMergeWith,
+  onSaveToBackend,
+  onCategoryCreated,
 }: {
   cluster: Cluster;
+  clusters: Cluster[];
   categories: Category[];
   selected: boolean;
   expanded: boolean;
@@ -133,10 +135,18 @@ function ClusterCard({
   onToggleExpand: () => void;
   onPatch: (patch: Partial<Cluster>) => void;
   onSplit: () => void;
+  onMergeWith: (targetId: string, memberDesc?: string) => void;
+  onSaveToBackend: (cluster: Cluster) => void;
+  onCategoryCreated?: (c: CategoryItem) => void;
 }) {
   const count = clusterTxnCount(cluster);
   const total = clusterTotal(cluster);
   const ignored = cluster.status === "ignored";
+
+  const otherClusters = useMemo(
+    () => clusters.filter((c) => c.id !== cluster.id).sort((a, b) => a.name.localeCompare(b.name)),
+    [clusters, cluster.id],
+  );
 
   return (
     <div
@@ -169,19 +179,49 @@ function ClusterCard({
 
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Input
-              value={cluster.name}
-              onChange={(e) => onPatch({ name: e.target.value, source: "manual", status: "approved", confidence: 1 })}
-              aria-label="Payee name"
-              className="h-7 max-w-[280px] flex-1 text-xs font-medium"
-            />
+            {/* Payee Dropdown / Editable Input */}
+            <div className="flex items-center gap-1 min-w-[220px] max-w-[320px] flex-1">
+              <Input
+                value={cluster.name}
+                onChange={(e) => onPatch({ name: e.target.value, source: "manual", status: "approved", confidence: 1 })}
+                aria-label="Payee name"
+                className="h-7 text-xs font-medium"
+              />
+              <Select
+                value=""
+                onValueChange={(val) => {
+                  const target = clusters.find((c) => c.id === val);
+                  if (target) {
+                    onPatch({
+                      name: target.name,
+                      category_id: target.category_id ?? cluster.category_id,
+                      source: "manual",
+                      status: "approved",
+                      confidence: 1,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger className="h-7 w-7 p-0 shrink-0" aria-label="Pick existing cluster payee">
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </SelectTrigger>
+                <SelectContent>
+                  {otherClusters.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <MatchSourceBadge source={cluster.pendingAi ? "pending" : cluster.source} />
             <StatusBadge status={cluster.status} />
             <ConfidenceMeter value={cluster.confidence} />
             {cluster.isExisting && (
               <span className="inline-flex items-center gap-1 rounded-full border border-info/30 bg-info/12 px-1.5 py-px text-[10px] font-medium text-info">
                 <Users className="h-2.5 w-2.5" aria-hidden />
-                Linked
+                Saved
               </span>
             )}
           </div>
@@ -202,11 +242,12 @@ function ClusterCard({
             ))}
           </div>
 
-          <div className="grid gap-1.5 sm:grid-cols-[minmax(0,200px)_minmax(0,140px)_auto]">
+          <div className="grid gap-1.5 sm:grid-cols-[minmax(0,220px)_minmax(0,120px)_auto]">
             <CategorySelect
               categories={categories}
               value={cluster.category_id}
               onChange={(v) => onPatch({ category_id: v })}
+              onCategoryCreated={onCategoryCreated}
             />
             <Select
               value={cluster.type}
@@ -223,16 +264,35 @@ function ClusterCard({
                 <SelectItem value="transfer">Transfer</SelectItem>
               </SelectContent>
             </Select>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <Button
                 size="sm"
-                variant="ghost"
+                variant={cluster.status === "approved" ? "default" : "outline"}
                 className="h-7 px-2 text-xs"
-                onClick={() => onPatch({ status: "approved", pendingAi: false })}
+                onClick={() => {
+                  onPatch({ status: "approved", pendingAi: false });
+                  onSaveToBackend(cluster);
+                }}
               >
                 <Check className="mr-1 h-3 w-3" aria-hidden />
-                Approve
+                {cluster.status === "approved" ? "Approved" : "Approve & Save"}
               </Button>
+
+              {/* Merge Cluster Dropdown */}
+              <Select onValueChange={(targetId) => onMergeWith(targetId)}>
+                <SelectTrigger className="h-7 px-2 text-xs w-auto gap-1 border-dashed" aria-label="Merge cluster">
+                  <Merge className="h-3 w-3" />
+                  <span>Merge</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {otherClusters.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      Merge into “{c.name}”
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={onSplit}>
                 <Scissors className="mr-1 h-3 w-3" aria-hidden />
                 Split
@@ -262,6 +322,20 @@ function ClusterCard({
                   <span className="shrink-0 tabular-nums text-muted-foreground">
                     {m.count}× · {money(m.total)}
                   </span>
+                  {/* Per-transaction description merge */}
+                  <Select onValueChange={(targetId) => onMergeWith(targetId, m.description)}>
+                    <SelectTrigger className="h-5 px-1.5 text-[10px] w-auto border-dashed" aria-label="Merge transaction">
+                      <Merge className="h-2.5 w-2.5 mr-0.5" />
+                      <span>Merge</span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {otherClusters.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          Move to “{c.name}”
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </li>
               ))}
               {cluster.members.length > 60 && (
@@ -284,6 +358,8 @@ export function ConfirmStep({
   aiRemaining,
   polishing,
   onPolish,
+  onSavePayee,
+  onCategoryCreated,
   onBack,
   onContinue,
 }: {
@@ -293,6 +369,8 @@ export function ConfirmStep({
   aiRemaining: number;
   polishing: boolean;
   onPolish: () => void;
+  onSavePayee?: (cluster: Cluster) => void;
+  onCategoryCreated?: (c: CategoryItem) => void;
   onBack: () => void;
   onContinue: () => void;
 }) {
@@ -340,6 +418,14 @@ export function ConfirmStep({
   const bulk = (p: Partial<Cluster>) => {
     const set = new Set(selectedIds);
     setClusters(clusters.map((c) => (set.has(c.id) ? { ...c, ...p } : c)));
+  };
+
+  const handleMergeWith = (sourceId: string, targetId: string, memberDesc?: string) => {
+    if (memberDesc) {
+      setClusters(moveMembers(clusters, sourceId, [memberDesc], targetId));
+    } else {
+      setClusters(mergeClusters(clusters, [sourceId, targetId]));
+    }
   };
 
   const splitTarget = clusters.find((c) => c.id === splitId) ?? null;
@@ -458,6 +544,7 @@ export function ConfirmStep({
               categories={categories}
               value={null}
               onChange={(v) => bulk({ category_id: v })}
+              onCategoryCreated={onCategoryCreated}
             />
           </div>
           <Button size="sm" variant="ghost" className="ml-auto h-7 text-xs" onClick={() => setSelectedIds([])}>
@@ -490,6 +577,7 @@ export function ConfirmStep({
                 >
                   <ClusterCard
                     cluster={c}
+                    clusters={clusters}
                     categories={categories}
                     selected={selectedIds.includes(c.id)}
                     expanded={!!expanded[c.id]}
@@ -504,6 +592,9 @@ export function ConfirmStep({
                       setSplitId(c.id);
                       setSplitPicked([]);
                     }}
+                    onMergeWith={(targetId, memberDesc) => handleMergeWith(c.id, targetId, memberDesc)}
+                    onSaveToBackend={(cl) => onSavePayee?.(cl)}
+                    onCategoryCreated={onCategoryCreated}
                   />
                 </div>
               );

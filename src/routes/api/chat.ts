@@ -55,9 +55,10 @@ export const Route = createFileRoute("/api/chat")({
         if (!threadId) return new Response("Missing threadId", { status: 400 });
 
         const key = process.env.LOVABLE_API_KEY;
-        if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
+        if (!key && !process.env.OLLAMA_BASE_URL) return new Response("Missing LOVABLE_API_KEY or OLLAMA_BASE_URL", { status: 500 });
 
         const gateway = createLovableAiGatewayProvider(key);
+        const modelName = process.env.OLLAMA_MODEL || "openai/gpt-5.5";
 
         // Pre-fetch quick context summary for the system prompt.
         const [{ data: accounts }, { data: catsAgg }] = await Promise.all([
@@ -197,7 +198,7 @@ You have read-only tools to fetch the user's actual data when the question needs
         };
 
         const result = streamText({
-          model: gateway("openai/gpt-5.5"),
+          model: gateway(modelName),
           system: systemPrompt,
           messages: await convertToModelMessages(body.messages),
           tools,

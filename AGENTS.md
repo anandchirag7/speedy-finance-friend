@@ -1,10 +1,6 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
+# Agent Rules
+
+## Change Logging Rule
+Whenever any file in this repository is edited or created:
+1. Update `CHANGES.md` at the workspace root (`d:\Python Apps\python projects\AIAPPS\personal_finance\speedy-finance-friend\CHANGES.md`).
+2. Record the file path under the current date section (`YYYY-MM-DD`). Avoid duplicate entries under the same date.
