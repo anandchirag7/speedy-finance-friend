@@ -123,6 +123,10 @@ export function StatementImportDialog() {
   const [operation, setOperation] = useState("Waiting for a file");
   const [elapsed, setElapsed] = useState(0);
   const startedAt = useRef(0);
+  const pendingCorrections = useRef<
+    Array<{ normalizedPattern: string; payeeName: string; category: string | null }>
+  >([]);
+
 
   const classification = useStatementClassification(uploadId);
 
@@ -183,6 +187,8 @@ export function StatementImportDialog() {
     setStats(emptyStats);
     setOperation("Waiting for a file");
     setElapsed(0);
+    pendingCorrections.current = [];
+
     setStageStates(
       Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
     );
@@ -364,8 +370,8 @@ export function StatementImportDialog() {
       if ((seen.get(`${r.date}|${r.amount}|${r.payee}`) ?? 0) > 1) r.duplicate = true;
     }
 
-    // Teach the system: confirmed names become overrides + dictionary entries.
-    const corrections = clusters
+    // Teach the system only once the import is actually saved (see onSave).
+    pendingCorrections.current = clusters
       .filter((c) => !c.pendingAi && c.status !== "ignored" && c.name.trim())
       .flatMap((c) =>
         c.patterns.map((p) => ({
@@ -374,13 +380,11 @@ export function StatementImportDialog() {
           category: categories.find((cat) => cat.id === c.category_id)?.name ?? null,
         })),
       );
-    if (corrections.length) {
-      void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
-    }
 
     setRows(next);
     setStep("review");
   };
+
 
   const onSave = async (finalRows: ReviewRow[]) => {
     setRows(finalRows);
@@ -417,6 +421,11 @@ export function StatementImportDialog() {
           })),
         },
       });
+      // Learn confirmed payee names only now that the import actually landed.
+      const corrections = pendingCorrections.current;
+      if (corrections.length) {
+        void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
+      }
       toast.success(
         `Imported ${toSave.length.toLocaleString()} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`,
       );
@@ -436,10 +445,19 @@ export function StatementImportDialog() {
     <Dialog
       open={open}
       onOpenChange={(v) => {
+        if (!v && saving) {
+          toast.info("Import in progress — it can't be cancelled once saving has started.");
+          return;
+        }
+        if (!v && (step === "confirm" || step === "review")) {
+          const ok = window.confirm("Discard this statement import? Nothing will be saved.");
+          if (!ok) return;
+        }
         setOpen(v);
         if (!v) reset();
       }}
     >
+
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Upload className="mr-2 h-4 w-4" /> Import statement
