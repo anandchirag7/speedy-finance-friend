@@ -234,9 +234,20 @@ export async function inspectStatementFile(
     pages = countMatch ? Number(countMatch[1]) : typePages || null;
   }
 
-  if (format === "xlsx" && !sample.startsWith("PK")) {
-    issues.push({ level: "error", code: "corrupt", message: "This XLSX file looks corrupted." });
+  if (isSheet) {
+    if (format === "xlsx" && !headSample.startsWith("PK")) {
+      issues.push({ level: "error", code: "corrupt", message: "This XLSX file looks corrupted." });
+    } else if (!sheet) {
+      issues.push({
+        level: "error",
+        code: "corrupt",
+        message: "Could not read this spreadsheet. It may be corrupted or password protected.",
+      });
+    } else {
+      pages = sheet.sheets || null;
+    }
   }
+
 
   // Bank detection
   let bank: string | null = null;
