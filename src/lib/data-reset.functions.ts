@@ -34,6 +34,7 @@ export type ResetScope = (typeof RESET_SCOPES)[number];
 const scopeSchema = z.object({
   scopes: z.array(z.enum(RESET_SCOPES)).min(1),
   confirm: z.literal("DELETE"),
+  counts: z.record(z.string(), z.number()).optional(),
 });
 
 async function del(supabase: any, table: string, apply: (q: any) => any) {
