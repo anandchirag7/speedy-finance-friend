@@ -194,6 +194,8 @@ export function StatementImportDialog() {
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [importToken, setImportToken] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReviewRow[] | null>(null);
+  const [dupScanning, setDupScanning] = useState(false);
+  const [lastBatch, setLastBatch] = useState<{ batchId: string; count: number } | null>(null);
 
   const [stageStates, setStageStates] = useState<Record<StageKey, Stage>>(() =>
     Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
@@ -281,6 +283,7 @@ export function StatementImportDialog() {
     uploadIdRef.current = null;
     setImportToken(null);
     setPreview(null);
+    setDupScanning(false);
     setArchived(false);
     setActivity({ kind: "idle" });
     setStats(emptyStats);
@@ -500,14 +503,24 @@ export function StatementImportDialog() {
       };
     });
 
-    // Duplicate hint: same date + amount + payee appearing more than once.
+    // Duplicate hint 1 — the same row appears twice inside this file.
     const seen = new Map<string, number>();
     for (const r of next) {
       const k = `${r.date}|${r.amount}|${r.payee}`;
       seen.set(k, (seen.get(k) ?? 0) + 1);
     }
     for (const r of next) {
-      if ((seen.get(`${r.date}|${r.amount}|${r.payee}`) ?? 0) > 1) r.duplicate = true;
+      const k = `${r.date}|${r.amount}|${r.payee}`;
+      const n = seen.get(k) ?? 0;
+      if (n > 1) {
+        r.duplicate = true;
+        r.dup = {
+          scope: "file",
+          confidence: 0.9,
+          matchKeys: ["date", "amount", "payee"],
+          reason: `Appears ${n} times in this statement with the same date + amount + payee`,
+        };
+      }
     }
 
     // Teach the system only once the import is actually saved (see onSave).
@@ -523,6 +536,65 @@ export function StatementImportDialog() {
 
     setRows(next);
     setStep("review");
+    void explainAccountDuplicates(next);
+  };
+
+  /**
+   * Duplicate hint 2 — the row already exists on the account. The server
+   * returns the matched fields and a confidence so the preview can say exactly
+   * why a row is being flagged instead of just "duplicate".
+   */
+  const explainAccountDuplicates = async (candidates: ReviewRow[]) => {
+    if (!accountId || !candidates.length) return;
+    setDupScanning(true);
+    try {
+      const res: any = await explainDupFn({
+        data: {
+          accountId,
+          transactions: candidates.slice(0, 10000).map((r) => ({
+            key: r.key,
+            date: r.date,
+            amount: Number(r.amount),
+            type: r.type,
+            description: r.description,
+            merchant: r.payee || null,
+            category_id: r.category_id,
+          })),
+        },
+      });
+      const verdicts: Array<{
+        key: string;
+        confidence: number;
+        matchKeys: string[];
+        reason: string;
+        existing: { date: string; amount: number; merchant: string | null; note: string | null };
+      }> = res?.verdicts ?? [];
+      if (!verdicts.length) return;
+      const byKey = new Map(verdicts.map((v) => [v.key, v]));
+      setRows((prev) =>
+        prev.map((r) => {
+          const v = byKey.get(r.key);
+          if (!v) return r;
+          // An account-level match always wins: it is the reason a row is skipped.
+          return {
+            ...r,
+            duplicate: true,
+            include: v.confidence >= 0.8 ? false : r.include,
+            dup: {
+              scope: "account" as const,
+              confidence: v.confidence,
+              matchKeys: v.matchKeys,
+              reason: v.reason,
+              existing: v.existing,
+            },
+          };
+        }),
+      );
+    } catch {
+      // Non-fatal: duplicates simply stay unexplained.
+    } finally {
+      setDupScanning(false);
+    }
   };
 
 
