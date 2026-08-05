@@ -35,7 +35,9 @@ import {
   clusterTxnCount,
   memberCohesion,
   mergeClusters,
+  moveMembers,
   splitCluster,
+
   summarize,
 } from "@/lib/statement-clusters";
 import { MatchSourceBadge, StatusBadge, ConfidenceMeter } from "./badges";
@@ -300,6 +302,8 @@ export function ConfirmStep({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [splitId, setSplitId] = useState<string | null>(null);
   const [splitPicked, setSplitPicked] = useState<string[]>([]);
+  const [moveTargetId, setMoveTargetId] = useState<string>("");
+
   const parentRef = useRef<HTMLDivElement>(null);
 
   const stats = useMemo(() => summarize(clusters), [clusters]);
@@ -528,11 +532,13 @@ export function ConfirmStep({
       <Sheet open={!!splitTarget} onOpenChange={(o) => !o && setSplitId(null)}>
         <SheetContent className="flex w-full flex-col gap-3 sm:max-w-xl">
           <SheetHeader>
-            <SheetTitle className="text-sm">Split “{splitTarget?.name}”</SheetTitle>
+            <SheetTitle className="text-sm">Reassign from “{splitTarget?.name}”</SheetTitle>
             <SheetDescription className="text-xs">
-              Pick the raw descriptions that belong to a different merchant. Similarity shows how
-              close each description is to the group representative.
+              Pick the raw descriptions that were grouped wrongly, then split them into a new payee or
+              move them into an existing payee group. Similarity shows how close each description is to
+              the group representative.
             </SheetDescription>
+
           </SheetHeader>
           <div className="min-h-0 flex-1 space-y-px overflow-auto rounded-[10px] border p-1">
             {splitTarget?.members.map((m) => {
@@ -571,6 +577,42 @@ export function ConfirmStep({
               );
             })}
           </div>
+          <div className="space-y-2 rounded-[10px] border bg-muted/30 p-2">
+            <p className="text-[11px] font-medium">Move the picked descriptions into another payee</p>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <Select value={moveTargetId} onValueChange={setMoveTargetId}>
+                  <SelectTrigger className="h-7 w-full text-xs" aria-label="Target payee group">
+                    <SelectValue placeholder="Choose a payee group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clusters
+                      .filter((c) => c.id !== splitId)
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} · {clusterTxnCount(c)}×
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={splitPicked.length === 0 || !moveTargetId}
+                onClick={() => {
+                  setClusters(moveMembers(clusters, splitId!, splitPicked, moveTargetId));
+                  setSplitId(null);
+                  setSplitPicked([]);
+                  setMoveTargetId("");
+                }}
+              >
+                <Merge className="mr-1 h-3 w-3" aria-hidden /> Move {splitPicked.length}
+              </Button>
+            </div>
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setSplitId(null)}>
               Cancel
@@ -584,9 +626,10 @@ export function ConfirmStep({
                 setSplitPicked([]);
               }}
             >
-              Split {splitPicked.length} out
+              Split {splitPicked.length} into new payee
             </Button>
           </div>
+
         </SheetContent>
       </Sheet>
     </div>

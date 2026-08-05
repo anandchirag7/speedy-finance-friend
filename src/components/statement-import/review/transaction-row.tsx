@@ -4,8 +4,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { MatchSourceBadge } from "../badges";
 import { CategoryCombobox } from "./category-combobox";
 import { PayeeCombobox } from "./payee-combobox";
+import { countRowRender } from "./profiler";
 import { ROW_GRID, ROW_HEIGHT, fmtDate, money, type Category, type ReviewRow } from "./types";
 import { cn } from "@/lib/utils";
+
 
 export type RowCallbacks = {
   onToggleSelect: (id: string) => void;
@@ -31,7 +33,9 @@ export const TransactionRow = memo(function TransactionRow({
   payees: string[];
   callbacks: RowCallbacks;
 }) {
+  countRowRender();
   return (
+
     <div
       className={cn(
         ROW_GRID,
