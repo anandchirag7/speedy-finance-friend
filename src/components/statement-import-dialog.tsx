@@ -513,11 +513,51 @@ export function StatementImportDialog() {
   };
 
 
-  const onSave = async (finalRows: ReviewRow[]) => {
+  /** Step 1 of saving: no write happens here — just stage the preview. */
+  const requestSave = (finalRows: ReviewRow[]) => {
     setRows(finalRows);
+    if (!finalRows.some((r) => r.include)) {
+      toast.error("Nothing to save");
+      return;
+    }
+    setPreview(finalRows);
+  };
+
+  const previewSummary = useMemo(() => {
+    const src = preview ?? [];
+    const included = src.filter((r) => r.include);
+    const dates = included.map((r) => r.date).sort();
+    const payees = new Set(included.map((r) => r.payee).filter(Boolean));
+    const uncategorized = included.filter((r) => !r.category_id).length;
+    const newPayees = clusters.filter(
+      (c) => c.status !== "ignored" && c.saveAsPayee && !c.isExisting && c.name.trim(),
+    ).length;
+    return {
+      total: src.length,
+      included: included.length,
+      excluded: src.length - included.length,
+      duplicates: included.filter((r) => r.duplicate).length,
+      uncategorized,
+      payees: payees.size,
+      newPayees,
+      from: dates[0] ?? "—",
+      to: dates[dates.length - 1] ?? "—",
+    };
+  }, [preview, clusters]);
+
+  const commitSave = async () => {
+    const finalRows = preview ?? rows;
     const toSave = finalRows.filter((r) => r.include);
     if (!toSave.length) return toast.error("Nothing to save");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setPreview(null);
     setSaving(true);
+    setActivity({
+      kind: "busy",
+      label: `Importing ${toSave.length.toLocaleString()} transactions`,
+      detail: "This import is idempotent — cancelling or retrying can never double-insert.",
+    });
     try {
       const active = clusters.filter((c) => c.status !== "ignored");
       const newPayees = active
@@ -533,11 +573,13 @@ export function StatementImportDialog() {
         if (!name || !c.members.length) continue;
         (payeeAliases[name] ??= []).push(...c.members.map((m) => m.description));
       }
-      await saveFn({
+      const res: any = await saveFn({
         data: {
           accountId,
           newPayees,
           payeeAliases,
+          importToken: importToken ?? undefined,
+          uploadId: uploadId ?? undefined,
           transactions: toSave.map((r) => ({
             txn_date: r.date,
             amount: Number(r.amount),
@@ -547,10 +589,30 @@ export function StatementImportDialog() {
             note: r.description.slice(0, 500),
           })),
         },
-      });
+        signal: controller.signal,
+      } as any);
+
+      if (res?.alreadyImported) {
+        toast.info("This statement was already imported — nothing was duplicated.");
+        setActivity({
+          kind: "ok",
+          label: "Already imported",
+          detail: `${Number(res.previouslyInserted ?? 0).toLocaleString()} transactions were saved by the earlier run; nothing was duplicated.`,
+        });
+        qc.invalidateQueries();
+        setOpen(false);
+        reset();
+        return;
+      }
+
       // Learn confirmed payee names only now that the import actually landed.
       const corrections = pendingCorrections.current;
       if (corrections.length) {
+        setActivity({
+          kind: "busy",
+          label: "Learning payee names",
+          detail: `${corrections.length.toLocaleString()} confirmed names are being saved to your payee dictionary.`,
+        });
         void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
       }
       toast.success(
@@ -560,11 +622,21 @@ export function StatementImportDialog() {
       setOpen(false);
       reset();
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to save");
+      const aborted = controller.signal.aborted;
+      setActivity({
+        kind: aborted ? "ok" : "error",
+        label: aborted
+          ? "Import aborted — the server rolled back, nothing was saved"
+          : "Import failed — nothing was saved",
+        detail: aborted ? undefined : (e?.message ?? "Unknown error"),
+      });
+      if (!aborted) toast.error(e?.message ?? "Failed to save");
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setSaving(false);
     }
   };
+
 
   const clusterStats = useMemo(() => summarize(clusters), [clusters]);
 
