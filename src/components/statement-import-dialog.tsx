@@ -421,6 +421,11 @@ export function StatementImportDialog() {
           })),
         },
       });
+      // Learn confirmed payee names only now that the import actually landed.
+      const corrections = pendingCorrections.current;
+      if (corrections.length) {
+        void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
+      }
       toast.success(
         `Imported ${toSave.length.toLocaleString()} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`,
       );
@@ -440,10 +445,19 @@ export function StatementImportDialog() {
     <Dialog
       open={open}
       onOpenChange={(v) => {
+        if (!v && saving) {
+          toast.info("Import in progress — it can't be cancelled once saving has started.");
+          return;
+        }
+        if (!v && (step === "confirm" || step === "review")) {
+          const ok = window.confirm("Discard this statement import? Nothing will be saved.");
+          if (!ok) return;
+        }
         setOpen(v);
         if (!v) reset();
       }}
     >
+
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Upload className="mr-2 h-4 w-4" /> Import statement
