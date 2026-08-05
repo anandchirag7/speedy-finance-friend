@@ -364,8 +364,8 @@ export function StatementImportDialog() {
       if ((seen.get(`${r.date}|${r.amount}|${r.payee}`) ?? 0) > 1) r.duplicate = true;
     }
 
-    // Teach the system: confirmed names become overrides + dictionary entries.
-    const corrections = clusters
+    // Teach the system only once the import is actually saved (see onSave).
+    pendingCorrections.current = clusters
       .filter((c) => !c.pendingAi && c.status !== "ignored" && c.name.trim())
       .flatMap((c) =>
         c.patterns.map((p) => ({
@@ -374,13 +374,11 @@ export function StatementImportDialog() {
           category: categories.find((cat) => cat.id === c.category_id)?.name ?? null,
         })),
       );
-    if (corrections.length) {
-      void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
-    }
 
     setRows(next);
     setStep("review");
   };
+
 
   const onSave = async (finalRows: ReviewRow[]) => {
     setRows(finalRows);
