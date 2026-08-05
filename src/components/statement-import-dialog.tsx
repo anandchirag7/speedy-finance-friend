@@ -119,11 +119,44 @@ function Stepper({ step }: { step: Step }) {
   );
 }
 
+function ActivityBanner({ activity, onDismiss }: { activity: Activity; onDismiss?: () => void }) {
+  if (activity.kind === "idle") return null;
+  const Icon =
+    activity.kind === "busy" ? Loader2 : activity.kind === "ok" ? CheckCircle2 : AlertTriangle;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex items-start gap-2 rounded-[10px] border px-2.5 py-1.5 text-[11px]",
+        activity.kind === "busy" && "border-info/30 bg-info/5 text-info",
+        activity.kind === "ok" && "border-success/30 bg-success/5 text-success",
+        activity.kind === "error" && "border-destructive/30 bg-destructive/5 text-destructive",
+      )}
+    >
+      <Icon
+        className={cn("mt-px h-3.5 w-3.5 shrink-0", activity.kind === "busy" && "animate-spin")}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{activity.label}</p>
+        {activity.detail && <p className="mt-0.5 break-words opacity-80">{activity.detail}</p>}
+      </div>
+      {onDismiss && activity.kind !== "busy" && (
+        <button type="button" onClick={onDismiss} aria-label="Dismiss" className="opacity-60 hover:opacity-100">
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function StatementImportDialog() {
   const startFn = useServerFn(startStatementUpload);
   const correctionsFn = useServerFn(saveMerchantCorrections);
   const saveFn = useServerFn(bulkInsertTransactions);
   const polishFn = useServerFn(polishPayeeNames);
+  const cancelFn = useServerFn(cancelStatementUpload);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => listAcc() });
@@ -138,12 +171,16 @@ export function StatementImportDialog() {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [activity, setActivity] = useState<Activity>({ kind: "idle" });
+  const [archived, setArchived] = useState(false);
 
   const [rawTxns, setRawTxns] = useState<ClusterTxn[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [uploadId, setUploadId] = useState<string | null>(null);
+  const [importToken, setImportToken] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ReviewRow[] | null>(null);
 
   const [stageStates, setStageStates] = useState<Record<StageKey, Stage>>(() =>
     Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
@@ -152,9 +189,24 @@ export function StatementImportDialog() {
   const [operation, setOperation] = useState("Waiting for a file");
   const [elapsed, setElapsed] = useState(0);
   const startedAt = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const uploadIdRef = useRef<string | null>(null);
   const pendingCorrections = useRef<
     Array<{ normalizedPattern: string; payeeName: string; category: string | null }>
   >([]);
+
+  const abortInFlight = useCallback(
+    (reason: string) => {
+      const ctl = abortRef.current;
+      abortRef.current = null;
+      if (ctl && !ctl.signal.aborted) ctl.abort(new Error(reason));
+      const id = uploadIdRef.current;
+      if (id) void cancelFn({ data: { uploadId: id } }).catch(() => undefined);
+    },
+    [cancelFn],
+  );
+
+
 
 
   const classification = useStatementClassification(uploadId);
