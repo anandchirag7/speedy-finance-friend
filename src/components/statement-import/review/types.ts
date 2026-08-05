@@ -14,7 +14,19 @@ export type ReviewRow = {
   confidence: number;
   include: boolean;
   duplicate: boolean;
+  /** Why this row was flagged as a duplicate (match keys + confidence). */
+  dup?: DuplicateEvidence;
 };
+
+/** Human-readable explanation of a duplicate collision. */
+export type DuplicateEvidence = {
+  scope: "file" | "account";
+  confidence: number;
+  matchKeys: string[];
+  reason: string;
+  existing?: { date: string; amount: number; merchant: string | null; note: string | null };
+};
+
 
 export type Category = { id: string; name: string; parent_id: string | null };
 

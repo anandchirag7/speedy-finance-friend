@@ -12,6 +12,10 @@ import {
   CheckCircle2,
   Archive,
   X,
+  Download,
+  FileText,
+  Undo2,
+  ShieldQuestion,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -37,6 +41,12 @@ import { listAccounts } from "@/lib/finance.functions";
 import { polishPayeeNames, bulkInsertTransactions } from "@/lib/statement-import.functions";
 import { startStatementUpload, saveMerchantCorrections } from "@/lib/statement-pipeline.functions";
 import { cancelStatementUpload } from "@/lib/statement-archive.functions";
+import {
+  explainImportDuplicates,
+  notifyImportEvent,
+  undoImportBatch,
+} from "@/lib/statement-audit.functions";
+import { exportImportToCSV, exportImportToPDF } from "@/lib/statement-export";
 import { useStatementClassification } from "@/hooks/use-statement-classification";
 import type { StatementDetection } from "@/lib/statement-detect";
 import {
@@ -157,6 +167,9 @@ export function StatementImportDialog() {
   const saveFn = useServerFn(bulkInsertTransactions);
   const polishFn = useServerFn(polishPayeeNames);
   const cancelFn = useServerFn(cancelStatementUpload);
+  const explainDupFn = useServerFn(explainImportDuplicates);
+  const notifyFn = useServerFn(notifyImportEvent);
+  const undoFn = useServerFn(undoImportBatch);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => listAcc() });
@@ -181,6 +194,8 @@ export function StatementImportDialog() {
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [importToken, setImportToken] = useState<string | null>(null);
   const [preview, setPreview] = useState<ReviewRow[] | null>(null);
+  const [dupScanning, setDupScanning] = useState(false);
+  const [lastBatch, setLastBatch] = useState<{ batchId: string; count: number } | null>(null);
 
   const [stageStates, setStageStates] = useState<Record<StageKey, Stage>>(() =>
     Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
@@ -268,6 +283,7 @@ export function StatementImportDialog() {
     uploadIdRef.current = null;
     setImportToken(null);
     setPreview(null);
+    setDupScanning(false);
     setArchived(false);
     setActivity({ kind: "idle" });
     setStats(emptyStats);
@@ -399,6 +415,14 @@ export function StatementImportDialog() {
         `${txns.length.toLocaleString()} transactions · ${built.length} payee clusters` +
           (pending ? ` · naming ${pending} in the background` : " · all recognised"),
       );
+      notify("parsed", true, `Statement parsed — ${txns.length.toLocaleString()} transactions ready to review`, [
+        `File: ${file?.name ?? "statement"}`,
+        `Payee clusters: ${built.length}`,
+        (res as any).archived
+          ? "The original file was archived privately."
+          : "The original file was not archived (archiving is off).",
+        "Nothing has been saved yet — review and import in the app.",
+      ]);
     } catch (e: any) {
       if (controller.signal.aborted) {
         setOperation("Cancelled");
@@ -414,6 +438,10 @@ export function StatementImportDialog() {
         detail: e?.message ?? "Unknown error",
       });
       toast.error(e?.message ?? "Failed to parse statement");
+      notify("failed", false, "Statement parsing failed", [
+        `File: ${file?.name ?? "statement"}`,
+        `Error: ${e?.message ?? "Unknown error"}`,
+      ]);
       setStep("import");
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -464,7 +492,7 @@ export function StatementImportDialog() {
     }
   };
 
-  const onConfirmPayees = () => {
+  const onConfirmPayees = async () => {
     const byDesc = new Map<string, Cluster>();
     for (const c of clusters) for (const m of c.members) byDesc.set(m.description, c);
 
@@ -487,14 +515,24 @@ export function StatementImportDialog() {
       };
     });
 
-    // Duplicate hint: same date + amount + payee appearing more than once.
+    // Duplicate hint 1 — the same row appears twice inside this file.
     const seen = new Map<string, number>();
     for (const r of next) {
       const k = `${r.date}|${r.amount}|${r.payee}`;
       seen.set(k, (seen.get(k) ?? 0) + 1);
     }
     for (const r of next) {
-      if ((seen.get(`${r.date}|${r.amount}|${r.payee}`) ?? 0) > 1) r.duplicate = true;
+      const k = `${r.date}|${r.amount}|${r.payee}`;
+      const n = seen.get(k) ?? 0;
+      if (n > 1) {
+        r.duplicate = true;
+        r.dup = {
+          scope: "file",
+          confidence: 0.9,
+          matchKeys: ["date", "amount", "payee"],
+          reason: `Appears ${n} times in this statement with the same date + amount + payee`,
+        };
+      }
     }
 
     // Teach the system only once the import is actually saved (see onSave).
@@ -508,10 +546,138 @@ export function StatementImportDialog() {
         })),
       );
 
-    setRows(next);
+    const enriched = await explainAccountDuplicates(next);
+    setRows(enriched);
     setStep("review");
   };
 
+  /**
+   * Duplicate hint 2 — the row already exists on the account. The server
+   * returns the matched fields and a confidence so the preview can say exactly
+   * why a row is being flagged instead of just "duplicate".
+   */
+  const explainAccountDuplicates = async (candidates: ReviewRow[]): Promise<ReviewRow[]> => {
+    if (!accountId || !candidates.length) return candidates;
+    setDupScanning(true);
+    try {
+      const res: any = await explainDupFn({
+        data: {
+          accountId,
+          transactions: candidates.slice(0, 10000).map((r) => ({
+            key: r.key,
+            date: r.date,
+            amount: Number(r.amount),
+            type: r.type,
+            description: r.description,
+            merchant: r.payee || null,
+            category_id: r.category_id,
+          })),
+        },
+      });
+      const verdicts: Array<{
+        key: string;
+        confidence: number;
+        matchKeys: string[];
+        reason: string;
+        existing: { date: string; amount: number; merchant: string | null; note: string | null };
+      }> = res?.verdicts ?? [];
+      if (!verdicts.length) return candidates;
+      const byKey = new Map(verdicts.map((v) => [v.key, v]));
+      return candidates.map((r) => {
+        const v = byKey.get(r.key);
+        if (!v) return r;
+        // An account-level match always wins: it is the reason a row is skipped.
+        return {
+          ...r,
+          duplicate: true,
+          include: v.confidence >= 0.8 ? false : r.include,
+          dup: {
+            scope: "account" as const,
+            confidence: v.confidence,
+            matchKeys: v.matchKeys,
+            reason: v.reason,
+            existing: v.existing,
+          },
+        };
+      });
+    } catch {
+      // Non-fatal: duplicates simply stay unexplained.
+      return candidates;
+    } finally {
+      setDupScanning(false);
+    }
+  };
+
+
+  const categoryName = useCallback(
+    (id: string | null) => (id ? categories.find((c) => c.id === id)?.name ?? "—" : "Uncategorized"),
+    [categories],
+  );
+
+  /** Fire-and-forget notification: in-app toast is primary, email is optional. */
+  const notify = useCallback(
+    (event: "parsed" | "imported" | "rolled_back" | "failed", ok: boolean, title: string, lines: string[]) => {
+      void notifyFn({ data: { event, ok, title, lines } })
+        .then((r: any) => {
+          if (r?.sent) toast.message("Notification email sent", { description: title });
+        })
+        .catch(() => undefined);
+    },
+    [notifyFn],
+  );
+
+  const exportMeta = (kind: "preview" | "imported", rowsForRange: ReviewRow[]) => {
+    const dates = rowsForRange.map((r) => r.date).filter(Boolean).sort();
+    return {
+      kind,
+      fileName: file?.name ?? "statement",
+      account:
+        (accounts as Array<{ id: string; name: string }>).find((a) => a.id === accountId)?.name ?? "—",
+      bank: bank || "—",
+      from: dates[0] ?? "—",
+      to: dates[dates.length - 1] ?? "—",
+    } as const;
+  };
+
+  const exportSummary = (rowsForRange: ReviewRow[]): Array<[string, string]> => {
+    const included = rowsForRange.filter((r) => r.include);
+    return [
+      ["Rows in statement", String(rowsForRange.length)],
+      ["Included", String(included.length)],
+      ["Excluded", String(rowsForRange.length - included.length)],
+      ["Flagged duplicates", String(rowsForRange.filter((r) => r.duplicate).length)],
+      ["Already on account", String(rowsForRange.filter((r) => r.dup?.scope === "account").length)],
+      ["Repeated in file", String(rowsForRange.filter((r) => r.dup?.scope === "file").length)],
+      ["Uncategorised", String(included.filter((r) => !r.category_id).length)],
+      ["Distinct payees", String(new Set(included.map((r) => r.payee).filter(Boolean)).size)],
+    ];
+  };
+
+  const doExport = (fmt: "csv" | "pdf", kind: "preview" | "imported", src: ReviewRow[]) => {
+    const rowsOut = kind === "imported" ? src.filter((r) => r.include) : src;
+    try {
+      const meta = exportMeta(kind, src);
+      if (fmt === "csv") exportImportToCSV(rowsOut, meta, exportSummary(src), categoryName);
+      else exportImportToPDF(rowsOut, meta, exportSummary(src), categoryName);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Export failed");
+    }
+  };
+
+  const rollback = async (batchId: string) => {
+    try {
+      const res: any = await undoFn({ data: { batchId } });
+      qc.invalidateQueries();
+      setLastBatch(null);
+      toast.success(`Rolled back ${Number(res?.deleted ?? 0).toLocaleString()} imported transactions`);
+      notify("rolled_back", true, "Statement import rolled back", [
+        `${Number(res?.deleted ?? 0).toLocaleString()} transactions were removed.`,
+        `Account balances were recalculated.`,
+      ]);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not roll back this import");
+    }
+  };
 
   /** Step 1 of saving: no write happens here — just stage the preview. */
   const requestSave = (finalRows: ReviewRow[]) => {
@@ -537,6 +703,13 @@ export function StatementImportDialog() {
       included: included.length,
       excluded: src.length - included.length,
       duplicates: included.filter((r) => r.duplicate).length,
+      dupExcluded: src.filter((r) => !r.include && r.duplicate).length,
+      dupOnAccount: src.filter((r) => r.dup?.scope === "account").length,
+      dupInFile: src.filter((r) => r.dup?.scope === "file").length,
+      dupSamples: src
+        .filter((r) => r.dup)
+        .sort((a, b) => (b.dup!.confidence ?? 0) - (a.dup!.confidence ?? 0))
+        .slice(0, 6),
       uncategorized,
       payees: payees.size,
       newPayees,
@@ -615,9 +788,32 @@ export function StatementImportDialog() {
         });
         void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
       }
+      const batchId = (res?.batchId as string) ?? importToken ?? null;
+      const snapshot = toSave;
+      const meta = exportMeta("imported", snapshot);
+      if (batchId) setLastBatch({ batchId, count: snapshot.length });
       toast.success(
-        `Imported ${toSave.length.toLocaleString()} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`,
+        `Imported ${snapshot.length.toLocaleString()} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`,
+        {
+          duration: 15000,
+          description: batchId ? "Something wrong? You can roll this import back." : undefined,
+          action: batchId
+            ? { label: "Undo import", onClick: () => void rollback(batchId) }
+            : undefined,
+        },
       );
+      toast.message("Keep a record of this import", {
+        duration: 15000,
+        description: `${meta.fileName} · ${meta.from} → ${meta.to}`,
+        action: { label: "Download CSV", onClick: () => doExport("csv", "imported", snapshot) },
+      });
+      notify("imported", true, `Imported ${snapshot.length.toLocaleString()} transactions`, [
+        `File: ${meta.fileName}`,
+        `Account: ${meta.account} (${meta.bank})`,
+        `Period: ${meta.from} → ${meta.to}`,
+        `New payees saved: ${newPayees.length}`,
+        `Duplicates skipped: ${rows.filter((r) => r.duplicate && !r.include).length}`,
+      ]);
       qc.invalidateQueries();
       setOpen(false);
       reset();
@@ -630,7 +826,13 @@ export function StatementImportDialog() {
           : "Import failed — nothing was saved",
         detail: aborted ? undefined : (e?.message ?? "Unknown error"),
       });
-      if (!aborted) toast.error(e?.message ?? "Failed to save");
+      if (!aborted) {
+        toast.error(e?.message ?? "Failed to save");
+        notify("failed", false, "Statement import failed — nothing was saved", [
+          `File: ${file?.name ?? "statement"}`,
+          `Error: ${e?.message ?? "Unknown error"}`,
+        ]);
+      }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setSaving(false);
@@ -737,7 +939,7 @@ export function StatementImportDialog() {
               polishing={polishing}
               onPolish={onPolish}
               onBack={() => setStep("import")}
-              onContinue={onConfirmPayees}
+              onContinue={() => void onConfirmPayees()}
             />
           )}
 
@@ -776,6 +978,51 @@ export function StatementImportDialog() {
                 </div>
               ))}
             </dl>
+            {(previewSummary.dupOnAccount > 0 || previewSummary.dupInFile > 0) && (
+              <div className="space-y-1.5 rounded-[10px] border border-border bg-muted/40 p-2.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-medium">
+                  <ShieldQuestion className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Why {(previewSummary.dupOnAccount + previewSummary.dupInFile).toLocaleString()} rows are flagged as
+                  duplicates
+                  {dupScanning && <span className="text-muted-foreground">· checking…</span>}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {previewSummary.dupOnAccount.toLocaleString()} already exist on this account ·{" "}
+                  {previewSummary.dupInFile.toLocaleString()} repeat inside the file ·{" "}
+                  {previewSummary.dupExcluded.toLocaleString()} are excluded from this import.
+                </p>
+                <ul className="max-h-40 space-y-1 overflow-y-auto">
+                  {previewSummary.dupSamples.map((r) => (
+                    <li key={r.key} className="rounded-[8px] border border-border bg-background px-2 py-1 text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{r.payee || r.description}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {r.date} · {r.amount.toFixed(2)} · {Math.round((r.dup?.confidence ?? 0) * 100)}% match
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground">
+                        {r.dup?.reason}
+                        {r.dup?.matchKeys?.length ? ` — keys: ${r.dup.matchKeys.join(", ")}` : ""}
+                      </p>
+                      {r.dup?.existing && (
+                        <p className="text-muted-foreground">
+                          Existing: {r.dup.existing.date} · {Number(r.dup.existing.amount).toFixed(2)} ·{" "}
+                          {r.dup.existing.merchant || r.dup.existing.note || "—"}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => doExport("csv", "preview", preview ?? [])}>
+                <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Export preview CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => doExport("pdf", "preview", preview ?? [])}>
+                <FileText className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Export preview PDF
+              </Button>
+            </div>
             <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
               <Archive className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
               {archived
