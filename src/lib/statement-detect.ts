@@ -192,8 +192,12 @@ export async function inspectStatementFile(
   const format = formatOf(file);
   const issues: StatementIssue[] = [];
   const isText = format === "csv" || format === "ofx" || format === "qif";
-  const sample = await readSlice(file, isText || format === "pdf" ? 1_500_000 : 8192);
-  const fingerprint = fingerprintOf(file, sample);
+  const isSheet = format === "xlsx" || format === "xls";
+  const headSample = await readSlice(file, isText || format === "pdf" ? 1_500_000 : 8192);
+  const sheet = isSheet ? await readSpreadsheet(file) : null;
+  const sample = sheet ? sheet.text : headSample;
+  const fingerprint = fingerprintOf(file, headSample);
+
 
   if (format === "unknown") {
     issues.push({
