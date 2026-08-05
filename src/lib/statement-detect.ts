@@ -309,7 +309,7 @@ export async function inspectStatementFile(
   }
 
   const signals = [bank ? 1 : 0, currency ? 1 : 0, period.start ? 1 : 0, estimatedRows ? 1 : 0];
-  const base = isText ? 0.55 : format === "pdf" ? 0.45 : 0.3;
+  const base = isText || sheet ? 0.55 : format === "pdf" ? 0.45 : 0.3;
   const confidence = issues.some((i) => i.level === "error")
     ? 0
     : Math.min(0.98, base + signals.reduce((a, b) => a + b, 0) * 0.11);
