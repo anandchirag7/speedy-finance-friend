@@ -1322,6 +1322,8 @@ export type Database = {
           default_household_id: string | null
           display_name: string | null
           id: string
+          import_email_notifications: boolean
+          notification_email: string | null
           number_format: string
           updated_at: string
           use_lakh_crore: boolean
@@ -1335,6 +1337,8 @@ export type Database = {
           default_household_id?: string | null
           display_name?: string | null
           id: string
+          import_email_notifications?: boolean
+          notification_email?: string | null
           number_format?: string
           updated_at?: string
           use_lakh_crore?: boolean
@@ -1348,6 +1352,8 @@ export type Database = {
           default_household_id?: string | null
           display_name?: string | null
           id?: string
+          import_email_notifications?: boolean
+          notification_email?: string | null
           number_format?: string
           updated_at?: string
           use_lakh_crore?: boolean
