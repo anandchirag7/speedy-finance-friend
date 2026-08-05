@@ -187,6 +187,8 @@ export function StatementImportDialog() {
     setStats(emptyStats);
     setOperation("Waiting for a file");
     setElapsed(0);
+    pendingCorrections.current = [];
+
     setStageStates(
       Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
     );
