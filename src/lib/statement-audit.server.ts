@@ -102,7 +102,7 @@ export function explainDuplicates(incoming: IncomingTxn[], existing: TxnLite[]):
     const desc = normText(row.description);
     const payee = normText(row.merchant);
 
-    let best: DuplicateVerdict | null = null;
+    const holder: { best?: DuplicateVerdict } = {};
 
     const consider = (t: TxnLite, sameDay: boolean) => {
       const keys = ["amount", "type"];
@@ -124,8 +124,9 @@ export function explainDuplicates(incoming: IncomingTxn[], existing: TxnLite[]):
         keys.push("category");
       }
       confidence = Math.min(0.99, confidence);
-      if (!best || confidence > best.confidence) {
-        best = {
+      const cur = holder.best;
+      if (!cur || confidence > cur.confidence) {
+        holder.best = {
           key: row.key,
           confidence,
           matchKeys: keys,
@@ -142,7 +143,7 @@ export function explainDuplicates(incoming: IncomingTxn[], existing: TxnLite[]):
     };
 
     for (const t of byExact.get(`${row.date}|${amtKey}`) ?? []) consider(t, true);
-    if (!best || best.confidence < 0.8) {
+    if (!holder.best || holder.best.confidence < 0.8) {
       for (const t of byAmount.get(amtKey) ?? []) {
         const gap = daysApart(row.date, t.txn_date);
         if (gap === 0 || gap > 3) continue;
@@ -150,7 +151,7 @@ export function explainDuplicates(incoming: IncomingTxn[], existing: TxnLite[]):
       }
     }
 
-    if (best) out.push(best);
+    if (holder.best) out.push(holder.best);
   }
   return out;
 }
