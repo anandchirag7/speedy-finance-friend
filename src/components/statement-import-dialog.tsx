@@ -769,9 +769,32 @@ export function StatementImportDialog() {
         });
         void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
       }
+      const batchId = (res?.batchId as string) ?? importToken ?? null;
+      const snapshot = toSave;
+      const meta = exportMeta("imported", snapshot);
+      if (batchId) setLastBatch({ batchId, count: snapshot.length });
       toast.success(
-        `Imported ${toSave.length.toLocaleString()} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`,
+        `Imported ${snapshot.length.toLocaleString()} transactions${newPayees.length ? ` · ${newPayees.length} new payees saved` : ""}`,
+        {
+          duration: 15000,
+          description: batchId ? "Something wrong? You can roll this import back." : undefined,
+          action: batchId
+            ? { label: "Undo import", onClick: () => void rollback(batchId) }
+            : undefined,
+        },
       );
+      toast.message("Keep a record of this import", {
+        duration: 15000,
+        description: `${meta.fileName} · ${meta.from} → ${meta.to}`,
+        action: { label: "Download CSV", onClick: () => doExport("csv", "imported", snapshot) },
+      });
+      notify("imported", true, `Imported ${snapshot.length.toLocaleString()} transactions`, [
+        `File: ${meta.fileName}`,
+        `Account: ${meta.account} (${meta.bank})`,
+        `Period: ${meta.from} → ${meta.to}`,
+        `New payees saved: ${newPayees.length}`,
+        `Duplicates skipped: ${rows.filter((r) => r.duplicate && !r.include).length}`,
+      ]);
       qc.invalidateQueries();
       setOpen(false);
       reset();
@@ -784,7 +807,13 @@ export function StatementImportDialog() {
           : "Import failed — nothing was saved",
         detail: aborted ? undefined : (e?.message ?? "Unknown error"),
       });
-      if (!aborted) toast.error(e?.message ?? "Failed to save");
+      if (!aborted) {
+        toast.error(e?.message ?? "Failed to save");
+        notify("failed", false, "Statement import failed — nothing was saved", [
+          `File: ${file?.name ?? "statement"}`,
+          `Error: ${e?.message ?? "Unknown error"}`,
+        ]);
+      }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setSaving(false);
