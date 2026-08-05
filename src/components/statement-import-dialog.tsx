@@ -123,6 +123,10 @@ export function StatementImportDialog() {
   const [operation, setOperation] = useState("Waiting for a file");
   const [elapsed, setElapsed] = useState(0);
   const startedAt = useRef(0);
+  const pendingCorrections = useRef<
+    Array<{ normalizedPattern: string; payeeName: string; category: string | null }>
+  >([]);
+
 
   const classification = useStatementClassification(uploadId);
 
