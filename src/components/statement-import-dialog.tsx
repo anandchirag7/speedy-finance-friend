@@ -652,10 +652,12 @@ export function StatementImportDialog() {
           const ok = window.confirm("Discard this statement import? Nothing will be saved.");
           if (!ok) return;
         }
+        if (!v) abortInFlight("Dialog closed");
         setOpen(v);
         if (!v) reset();
       }}
     >
+
 
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
