@@ -12,6 +12,10 @@ import {
   CheckCircle2,
   Archive,
   X,
+  Download,
+  FileText,
+  Undo2,
+  ShieldQuestion,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -37,6 +41,12 @@ import { listAccounts } from "@/lib/finance.functions";
 import { polishPayeeNames, bulkInsertTransactions } from "@/lib/statement-import.functions";
 import { startStatementUpload, saveMerchantCorrections } from "@/lib/statement-pipeline.functions";
 import { cancelStatementUpload } from "@/lib/statement-archive.functions";
+import {
+  explainImportDuplicates,
+  notifyImportEvent,
+  undoImportBatch,
+} from "@/lib/statement-audit.functions";
+import { exportImportToCSV, exportImportToPDF } from "@/lib/statement-export";
 import { useStatementClassification } from "@/hooks/use-statement-classification";
 import type { StatementDetection } from "@/lib/statement-detect";
 import {
@@ -157,6 +167,9 @@ export function StatementImportDialog() {
   const saveFn = useServerFn(bulkInsertTransactions);
   const polishFn = useServerFn(polishPayeeNames);
   const cancelFn = useServerFn(cancelStatementUpload);
+  const explainDupFn = useServerFn(explainImportDuplicates);
+  const notifyFn = useServerFn(notifyImportEvent);
+  const undoFn = useServerFn(undoImportBatch);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => listAcc() });
