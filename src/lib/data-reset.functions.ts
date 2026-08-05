@@ -185,6 +185,16 @@ export const resetHouseholdData = createServerFn({ method: "POST" })
     const scopes = new Set<ResetScope>(data.scopes);
     const done: string[] = [];
     const byHh = (q: any) => q.eq("household_id", hh);
+    const auditId = await logAudit(sb, {
+      household_id: hh,
+      actor_id: context.userId,
+      kind: "household",
+      scopes: data.scopes,
+      counts: data.counts ?? {},
+      status: "running",
+    });
+    try {
+
 
     // account ids (needed for account-keyed child tables)
     const { data: accts } = await sb.from("accounts").select("id").eq("household_id", hh);
