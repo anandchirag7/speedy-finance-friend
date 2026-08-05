@@ -532,11 +532,13 @@ export function ConfirmStep({
       <Sheet open={!!splitTarget} onOpenChange={(o) => !o && setSplitId(null)}>
         <SheetContent className="flex w-full flex-col gap-3 sm:max-w-xl">
           <SheetHeader>
-            <SheetTitle className="text-sm">Split “{splitTarget?.name}”</SheetTitle>
+            <SheetTitle className="text-sm">Reassign from “{splitTarget?.name}”</SheetTitle>
             <SheetDescription className="text-xs">
-              Pick the raw descriptions that belong to a different merchant. Similarity shows how
-              close each description is to the group representative.
+              Pick the raw descriptions that were grouped wrongly, then split them into a new payee or
+              move them into an existing payee group. Similarity shows how close each description is to
+              the group representative.
             </SheetDescription>
+
           </SheetHeader>
           <div className="min-h-0 flex-1 space-y-px overflow-auto rounded-[10px] border p-1">
             {splitTarget?.members.map((m) => {
