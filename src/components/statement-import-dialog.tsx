@@ -703,6 +703,13 @@ export function StatementImportDialog() {
       included: included.length,
       excluded: src.length - included.length,
       duplicates: included.filter((r) => r.duplicate).length,
+      dupExcluded: src.filter((r) => !r.include && r.duplicate).length,
+      dupOnAccount: src.filter((r) => r.dup?.scope === "account").length,
+      dupInFile: src.filter((r) => r.dup?.scope === "file").length,
+      dupSamples: src
+        .filter((r) => r.dup)
+        .sort((a, b) => (b.dup!.confidence ?? 0) - (a.dup!.confidence ?? 0))
+        .slice(0, 6),
       uncategorized,
       payees: payees.size,
       newPayees,
@@ -971,6 +978,51 @@ export function StatementImportDialog() {
                 </div>
               ))}
             </dl>
+            {(previewSummary.dupOnAccount > 0 || previewSummary.dupInFile > 0) && (
+              <div className="space-y-1.5 rounded-[10px] border border-border bg-muted/40 p-2.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-medium">
+                  <ShieldQuestion className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Why {(previewSummary.dupOnAccount + previewSummary.dupInFile).toLocaleString()} rows are flagged as
+                  duplicates
+                  {dupScanning && <span className="text-muted-foreground">· checking…</span>}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {previewSummary.dupOnAccount.toLocaleString()} already exist on this account ·{" "}
+                  {previewSummary.dupInFile.toLocaleString()} repeat inside the file ·{" "}
+                  {previewSummary.dupExcluded.toLocaleString()} are excluded from this import.
+                </p>
+                <ul className="max-h-40 space-y-1 overflow-y-auto">
+                  {previewSummary.dupSamples.map((r) => (
+                    <li key={r.key} className="rounded-[8px] border border-border bg-background px-2 py-1 text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">{r.payee || r.description}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {r.date} · {r.amount.toFixed(2)} · {Math.round((r.dup?.confidence ?? 0) * 100)}% match
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground">
+                        {r.dup?.reason}
+                        {r.dup?.matchKeys?.length ? ` — keys: ${r.dup.matchKeys.join(", ")}` : ""}
+                      </p>
+                      {r.dup?.existing && (
+                        <p className="text-muted-foreground">
+                          Existing: {r.dup.existing.date} · {Number(r.dup.existing.amount).toFixed(2)} ·{" "}
+                          {r.dup.existing.merchant || r.dup.existing.note || "—"}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => doExport("csv", "preview", preview ?? [])}>
+                <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Export preview CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => doExport("pdf", "preview", preview ?? [])}>
+                <FileText className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Export preview PDF
+              </Button>
+            </div>
             <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
               <Archive className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
               {archived
