@@ -821,7 +821,7 @@ export function StatementImportDialog() {
               polishing={polishing}
               onPolish={onPolish}
               onBack={() => setStep("import")}
-              onContinue={onConfirmPayees}
+              onContinue={() => void onConfirmPayees()}
             />
           )}
 
