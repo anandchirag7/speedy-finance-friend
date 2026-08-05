@@ -510,7 +510,11 @@ const bulkInput = z.object({
     .default([]),
   // Map of merchant name -> confirmed raw descriptions to learn as aliases.
   payeeAliases: z.record(z.string(), z.array(z.string())).default({}),
+  /** Idempotency: the token minted when the statement was parsed. */
+  importToken: z.string().uuid().optional(),
+  uploadId: z.string().uuid().optional(),
 });
+
 
 const MAX_ALIASES_PER_PAYEE = 50;
 
@@ -539,6 +543,30 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => bulkInput.parse(d))
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
+
+    // ---- Idempotency guard ----
+    // A cancelled/retried import must never insert twice: the token minted at
+    // parse time is claimed exactly once.
+    let claimedUploadId: string | null = null;
+    if (data.importToken) {
+      const { data: upload, error: upErr } = await context.supabase
+        .from("statement_uploads")
+        .select("id, imported_at, inserted_count")
+        .eq("import_token", data.importToken)
+        .maybeSingle();
+      if (upErr) throw new Error(upErr.message);
+      if (upload?.imported_at) {
+        return {
+          ok: true,
+          inserted: 0,
+          alreadyImported: true,
+          previouslyInserted: Number(upload.inserted_count ?? 0),
+        };
+      }
+      claimedUploadId = (upload?.id as string) ?? data.uploadId ?? null;
+    }
+
+
 
     // ---- Payee alias learning ----
     // Fetch every payee we might touch (new + those receiving new aliases) in one call.
@@ -617,20 +645,43 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
     }
 
     // ---- Transaction inserts ----
+    const batchId = data.importToken ?? crypto.randomUUID();
     const rows = data.transactions.map((t) => ({
       ...t,
       account_id: data.accountId,
       household_id: householdId,
       created_by: context.userId,
       tags: [],
+      import_batch_id: batchId,
     }));
 
     const CHUNK = 500;
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const slice = rows.slice(i, i + CHUNK);
-      const { error } = await context.supabase.from("transactions").insert(slice);
-      if (error) throw error;
+    try {
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const slice = rows.slice(i, i + CHUNK);
+        const { error } = await context.supabase.from("transactions").insert(slice);
+        if (error) throw error;
+      }
+    } catch (e: any) {
+      // All-or-nothing: never leave a half-imported statement behind.
+      await context.supabase.from("transactions").delete().eq("import_batch_id", batchId);
+      throw new Error(
+        `Import failed and was rolled back — no transactions were saved. ${e?.message ?? ""}`.trim(),
+      );
     }
+
+    if (claimedUploadId) {
+      await context.supabase
+        .from("statement_uploads")
+        .update({
+          status: "complete",
+          imported_at: new Date().toISOString(),
+          inserted_count: rows.length,
+          error: null,
+        })
+        .eq("id", claimedUploadId);
+    }
+
 
     // Recompute account balance
     const { data: acc } = await context.supabase
@@ -660,6 +711,6 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
         .update({ current_balance: balance })
         .eq("id", data.accountId);
     }
-    return { ok: true, inserted: rows.length };
+    return { ok: true, inserted: rows.length, alreadyImported: false, batchId };
   });
 

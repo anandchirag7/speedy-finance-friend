@@ -97,36 +97,80 @@ async function parseFile(
   throw new Error("Unsupported file type. Upload CSV, XLS, XLSX, PDF, OFX or QIF.");
 }
 
-export async function runStatementUpload(opts: {
-  supabase: any;
-  userId: string;
-  input: { accountId: string; bank: string; fileName: string; mimeType: string; base64: string };
-  origin: string;
-}): Promise<{
+export type UploadResult = {
   uploadId: string;
+  importToken: string;
   transactions: PipelineTxn[];
   resolved: ResolvedMap;
   pending: PendingPattern[];
   categories: Array<{ id: string; name: string; kind: string; parent_id: string | null }>;
   existingPayees: Array<{ id: string; merchant: string; category_id: string | null }>;
-}> {
+  archived: boolean;
+};
+
+export async function runStatementUpload(opts: {
+  supabase: any;
+  userId: string;
+  input: { accountId: string; bank: string; fileName: string; mimeType: string; base64: string };
+  origin: string;
+  /** Re-parse of an existing archived upload: reuse the row, skip re-archiving. */
+  existingUploadId?: string;
+}): Promise<UploadResult> {
   const { supabase, userId, input, origin } = opts;
   const householdId = await getHouseholdId(supabase, userId);
   const jobToken = crypto.randomUUID();
+  const importToken = crypto.randomUUID();
 
-  const { data: uploadRow, error: insertError } = await supabase
-    .from("statement_uploads")
-    .insert({
-      user_id: userId,
-      household_id: householdId,
-      filename: input.fileName,
-      status: "parsing",
-      result: { job_token: jobToken },
-    })
-    .select("id")
-    .single();
-  if (insertError) throw new Error(insertError.message);
-  const uploadId = uploadRow.id as string;
+  let uploadId: string;
+  if (opts.existingUploadId) {
+    uploadId = opts.existingUploadId;
+    const { error: upErr } = await supabase
+      .from("statement_uploads")
+      .update({
+        status: "parsing",
+        error: null,
+        import_token: importToken,
+        result: { job_token: jobToken },
+      })
+      .eq("id", uploadId);
+    if (upErr) throw new Error(upErr.message);
+  } else {
+    const { data: uploadRow, error: insertError } = await supabase
+      .from("statement_uploads")
+      .insert({
+        user_id: userId,
+        household_id: householdId,
+        filename: input.fileName,
+        status: "parsing",
+        import_token: importToken,
+        mime_type: input.mimeType || null,
+        result: { job_token: jobToken },
+      })
+      .select("id")
+      .single();
+    if (insertError) throw new Error(insertError.message);
+    uploadId = uploadRow.id as string;
+  }
+
+  // Optional private archive of the original file (audit + re-parse).
+  let archived = !!opts.existingUploadId;
+  if (!opts.existingUploadId) {
+    const { loadArchiveSettings, archiveOriginal } = await import("./statement-archive.server");
+    const settings = await loadArchiveSettings(supabase, householdId);
+    if (settings.archive_enabled) {
+      const path = await archiveOriginal({
+        supabase,
+        householdId,
+        uploadId,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        base64: input.base64,
+        retentionDays: settings.retention_days,
+      });
+      archived = !!path;
+    }
+  }
+
 
   const fail = async (message: string) => {
     await supabase
@@ -207,17 +251,59 @@ export async function runStatementUpload(opts: {
 
     return {
       uploadId,
+      importToken,
+      archived,
       transactions,
       resolved,
       pending,
       categories: (cats ?? []) as any,
       existingPayees: (payeeRows ?? []) as any,
     };
+
   } catch (e: any) {
     await fail(e?.message ?? "Statement processing failed");
     throw e;
   }
 }
+
+/** Re-runs the whole pipeline against an archived original file. */
+export async function reparseStatement(opts: {
+  supabase: any;
+  userId: string;
+  uploadId: string;
+  accountId: string;
+  bank: string;
+  origin: string;
+}): Promise<UploadResult> {
+  const { supabase, uploadId } = opts;
+  const { data: row, error } = await supabase
+    .from("statement_uploads")
+    .select("filename, mime_type, storage_path")
+    .eq("id", uploadId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row?.storage_path) throw new Error("The original file is no longer archived for this import.");
+
+  const { downloadArchived } = await import("./statement-archive.server");
+  const file = await downloadArchived(supabase, row.storage_path);
+  if (!file) throw new Error("Could not read the archived file.");
+
+  return runStatementUpload({
+    supabase: opts.supabase,
+    userId: opts.userId,
+    origin: opts.origin,
+    existingUploadId: uploadId,
+    input: {
+      accountId: opts.accountId,
+      bank: opts.bank,
+      fileName: row.filename as string,
+      mimeType: (row.mime_type as string) || file.mimeType,
+      base64: file.base64,
+    },
+  });
+}
+
+
 
 export async function saveCorrections(
   supabase: any,
