@@ -1,9 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Upload, Sparkles, FileSearch, ListChecks, Table2 } from "lucide-react";
+import {
+  Upload,
+  Sparkles,
+  FileSearch,
+  ListChecks,
+  Table2,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  Archive,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +36,7 @@ import {
 import { listAccounts } from "@/lib/finance.functions";
 import { polishPayeeNames, bulkInsertTransactions } from "@/lib/statement-import.functions";
 import { startStatementUpload, saveMerchantCorrections } from "@/lib/statement-pipeline.functions";
+import { cancelStatementUpload } from "@/lib/statement-archive.functions";
 import { useStatementClassification } from "@/hooks/use-statement-classification";
 import type { StatementDetection } from "@/lib/statement-detect";
 import {
@@ -43,12 +65,19 @@ type Category = { id: string; name: string; kind: string; parent_id: string | nu
 
 type Step = "import" | "parsing" | "confirm" | "review";
 
+type Activity =
+  | { kind: "idle" }
+  | { kind: "busy"; label: string; detail?: string }
+  | { kind: "ok"; label: string; detail?: string }
+  | { kind: "error"; label: string; detail?: string };
+
 const STEPS: Array<{ key: Step; label: string; Icon: typeof FileSearch }> = [
   { key: "import", label: "Import", Icon: Upload },
   { key: "parsing", label: "Parsing", Icon: FileSearch },
   { key: "confirm", label: "Confirm payees", Icon: ListChecks },
   { key: "review", label: "Review", Icon: Table2 },
 ];
+
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -90,11 +119,44 @@ function Stepper({ step }: { step: Step }) {
   );
 }
 
+function ActivityBanner({ activity, onDismiss }: { activity: Activity; onDismiss?: () => void }) {
+  if (activity.kind === "idle") return null;
+  const Icon =
+    activity.kind === "busy" ? Loader2 : activity.kind === "ok" ? CheckCircle2 : AlertTriangle;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex items-start gap-2 rounded-[10px] border px-2.5 py-1.5 text-[11px]",
+        activity.kind === "busy" && "border-info/30 bg-info/5 text-info",
+        activity.kind === "ok" && "border-success/30 bg-success/5 text-success",
+        activity.kind === "error" && "border-destructive/30 bg-destructive/5 text-destructive",
+      )}
+    >
+      <Icon
+        className={cn("mt-px h-3.5 w-3.5 shrink-0", activity.kind === "busy" && "animate-spin")}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{activity.label}</p>
+        {activity.detail && <p className="mt-0.5 break-words opacity-80">{activity.detail}</p>}
+      </div>
+      {onDismiss && activity.kind !== "busy" && (
+        <button type="button" onClick={onDismiss} aria-label="Dismiss" className="opacity-60 hover:opacity-100">
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function StatementImportDialog() {
   const startFn = useServerFn(startStatementUpload);
   const correctionsFn = useServerFn(saveMerchantCorrections);
   const saveFn = useServerFn(bulkInsertTransactions);
   const polishFn = useServerFn(polishPayeeNames);
+  const cancelFn = useServerFn(cancelStatementUpload);
   const qc = useQueryClient();
   const listAcc = useServerFn(listAccounts);
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => listAcc() });
@@ -109,12 +171,16 @@ export function StatementImportDialog() {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  const [activity, setActivity] = useState<Activity>({ kind: "idle" });
+  const [archived, setArchived] = useState(false);
 
   const [rawTxns, setRawTxns] = useState<ClusterTxn[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [uploadId, setUploadId] = useState<string | null>(null);
+  const [importToken, setImportToken] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ReviewRow[] | null>(null);
 
   const [stageStates, setStageStates] = useState<Record<StageKey, Stage>>(() =>
     Object.fromEntries(STAGE_ORDER.map((k) => [k, { key: k, state: "pending" }])) as Record<StageKey, Stage>,
@@ -123,9 +189,24 @@ export function StatementImportDialog() {
   const [operation, setOperation] = useState("Waiting for a file");
   const [elapsed, setElapsed] = useState(0);
   const startedAt = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const uploadIdRef = useRef<string | null>(null);
   const pendingCorrections = useRef<
     Array<{ normalizedPattern: string; payeeName: string; category: string | null }>
   >([]);
+
+  const abortInFlight = useCallback(
+    (reason: string) => {
+      const ctl = abortRef.current;
+      abortRef.current = null;
+      if (ctl && !ctl.signal.aborted) ctl.abort(new Error(reason));
+      const id = uploadIdRef.current;
+      if (id) void cancelFn({ data: { uploadId: id } }).catch(() => undefined);
+    },
+    [cancelFn],
+  );
+
+
 
 
   const classification = useStatementClassification(uploadId);
@@ -184,6 +265,11 @@ export function StatementImportDialog() {
     setClusters([]);
     setRows([]);
     setUploadId(null);
+    uploadIdRef.current = null;
+    setImportToken(null);
+    setPreview(null);
+    setArchived(false);
+    setActivity({ kind: "idle" });
     setStats(emptyStats);
     setOperation("Waiting for a file");
     setElapsed(0);
@@ -194,9 +280,13 @@ export function StatementImportDialog() {
     );
   };
 
+
   const onParse = async () => {
     if (!accountId || !bank || !file) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setParsing(true);
+    setActivity({ kind: "busy", label: `Parsing ${file.name}`, detail: "No data is saved during this step." });
     setStep("parsing");
     startedAt.current = Date.now();
     setElapsed(0);
@@ -206,6 +296,7 @@ export function StatementImportDialog() {
       setOperation(`Reading ${file.name}`);
       setStage("read", { state: "active" });
       const base64 = await readFileAsBase64(file);
+      if (controller.signal.aborted) return;
       setStage("read", { state: "done", ms: Date.now() - startedAt.current });
 
       setStage("table", { state: "active" });
@@ -220,12 +311,15 @@ export function StatementImportDialog() {
           mimeType: file.type || "application/octet-stream",
           base64,
         },
-      });
+        signal: controller.signal,
+      } as any);
+      if (controller.signal.aborted) return;
 
       for (const k of ["table", "rows", "columns", "parse"] as StageKey[]) {
         setStage(k, { state: "done" });
       }
       setStage("rows", { state: "done", processed: res.transactions.length, total: res.transactions.length });
+
 
       if (!res.transactions.length) {
         setStage("parse", { state: "error", detail: "no transactions found" });
@@ -285,23 +379,56 @@ export function StatementImportDialog() {
 
       setClusters(built);
       setUploadId(res.uploadId);
+      uploadIdRef.current = res.uploadId;
+      setImportToken((res as any).importToken ?? null);
+      setArchived(!!(res as any).archived);
       if (detection?.fingerprint) {
         setSeenFingerprints((prev) => Array.from(new Set([...prev, detection.fingerprint])));
       }
       setStep("confirm");
+      setActivity({
+        kind: "ok",
+        label: `Parsed ${txns.length.toLocaleString()} transactions — nothing saved yet`,
+        detail:
+          (pending ? `Naming ${pending} payees in the background. ` : "All payees recognised. ") +
+          ((res as any).archived
+            ? "The original file was archived privately for audit and re-parse."
+            : "The original file was not archived (archiving is off in Settings)."),
+      });
       toast.success(
         `${txns.length.toLocaleString()} transactions · ${built.length} payee clusters` +
           (pending ? ` · naming ${pending} in the background` : " · all recognised"),
       );
     } catch (e: any) {
+      if (controller.signal.aborted) {
+        setOperation("Cancelled");
+        setActivity({ kind: "ok", label: "Import cancelled — nothing was saved" });
+        setStep("import");
+        return;
+      }
       setOperation("Failed");
       setStage("parse", { state: "error", detail: e?.message ?? "parse failed" });
+      setActivity({
+        kind: "error",
+        label: "Parsing failed — no transactions were saved",
+        detail: e?.message ?? "Unknown error",
+      });
       toast.error(e?.message ?? "Failed to parse statement");
       setStep("import");
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setParsing(false);
     }
   };
+
+  const onCancelParsing = () => {
+    abortInFlight("Cancelled by user");
+    setParsing(false);
+    setOperation("Cancelled");
+    setActivity({ kind: "ok", label: "Import cancelled — nothing was saved" });
+    setStep("import");
+  };
+
 
   const onPolish = async () => {
     const targets = clusters.filter((c) => c.status !== "ignored" && !c.isExisting);
@@ -386,11 +513,51 @@ export function StatementImportDialog() {
   };
 
 
-  const onSave = async (finalRows: ReviewRow[]) => {
+  /** Step 1 of saving: no write happens here — just stage the preview. */
+  const requestSave = (finalRows: ReviewRow[]) => {
     setRows(finalRows);
+    if (!finalRows.some((r) => r.include)) {
+      toast.error("Nothing to save");
+      return;
+    }
+    setPreview(finalRows);
+  };
+
+  const previewSummary = useMemo(() => {
+    const src = preview ?? [];
+    const included = src.filter((r) => r.include);
+    const dates = included.map((r) => r.date).sort();
+    const payees = new Set(included.map((r) => r.payee).filter(Boolean));
+    const uncategorized = included.filter((r) => !r.category_id).length;
+    const newPayees = clusters.filter(
+      (c) => c.status !== "ignored" && c.saveAsPayee && !c.isExisting && c.name.trim(),
+    ).length;
+    return {
+      total: src.length,
+      included: included.length,
+      excluded: src.length - included.length,
+      duplicates: included.filter((r) => r.duplicate).length,
+      uncategorized,
+      payees: payees.size,
+      newPayees,
+      from: dates[0] ?? "—",
+      to: dates[dates.length - 1] ?? "—",
+    };
+  }, [preview, clusters]);
+
+  const commitSave = async () => {
+    const finalRows = preview ?? rows;
     const toSave = finalRows.filter((r) => r.include);
     if (!toSave.length) return toast.error("Nothing to save");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setPreview(null);
     setSaving(true);
+    setActivity({
+      kind: "busy",
+      label: `Importing ${toSave.length.toLocaleString()} transactions`,
+      detail: "This import is idempotent — cancelling or retrying can never double-insert.",
+    });
     try {
       const active = clusters.filter((c) => c.status !== "ignored");
       const newPayees = active
@@ -406,11 +573,13 @@ export function StatementImportDialog() {
         if (!name || !c.members.length) continue;
         (payeeAliases[name] ??= []).push(...c.members.map((m) => m.description));
       }
-      await saveFn({
+      const res: any = await saveFn({
         data: {
           accountId,
           newPayees,
           payeeAliases,
+          importToken: importToken ?? undefined,
+          uploadId: uploadId ?? undefined,
           transactions: toSave.map((r) => ({
             txn_date: r.date,
             amount: Number(r.amount),
@@ -420,10 +589,30 @@ export function StatementImportDialog() {
             note: r.description.slice(0, 500),
           })),
         },
-      });
+        signal: controller.signal,
+      } as any);
+
+      if (res?.alreadyImported) {
+        toast.info("This statement was already imported — nothing was duplicated.");
+        setActivity({
+          kind: "ok",
+          label: "Already imported",
+          detail: `${Number(res.previouslyInserted ?? 0).toLocaleString()} transactions were saved by the earlier run; nothing was duplicated.`,
+        });
+        qc.invalidateQueries();
+        setOpen(false);
+        reset();
+        return;
+      }
+
       // Learn confirmed payee names only now that the import actually landed.
       const corrections = pendingCorrections.current;
       if (corrections.length) {
+        setActivity({
+          kind: "busy",
+          label: "Learning payee names",
+          detail: `${corrections.length.toLocaleString()} confirmed names are being saved to your payee dictionary.`,
+        });
         void correctionsFn({ data: { corrections: corrections.slice(0, 2000) } }).catch(() => undefined);
       }
       toast.success(
@@ -433,11 +622,21 @@ export function StatementImportDialog() {
       setOpen(false);
       reset();
     } catch (e: any) {
-      toast.error(e?.message ?? "Failed to save");
+      const aborted = controller.signal.aborted;
+      setActivity({
+        kind: aborted ? "ok" : "error",
+        label: aborted
+          ? "Import aborted — the server rolled back, nothing was saved"
+          : "Import failed — nothing was saved",
+        detail: aborted ? undefined : (e?.message ?? "Unknown error"),
+      });
+      if (!aborted) toast.error(e?.message ?? "Failed to save");
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setSaving(false);
     }
   };
+
 
   const clusterStats = useMemo(() => summarize(clusters), [clusters]);
 
@@ -453,10 +652,12 @@ export function StatementImportDialog() {
           const ok = window.confirm("Discard this statement import? Nothing will be saved.");
           if (!ok) return;
         }
+        if (!v) abortInFlight("Dialog closed");
         setOpen(v);
         if (!v) reset();
       }}
     >
+
 
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
@@ -480,6 +681,8 @@ export function StatementImportDialog() {
             {step === "review" && "Final pass — exclude rows, fix payees and categories, then import."}
           </DialogDescription>
         </DialogHeader>
+
+        <ActivityBanner activity={activity} onDismiss={() => setActivity({ kind: "idle" })} />
 
         {classification.status === "failed" && step === "confirm" && (
           <div className="rounded-[10px] border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive">
@@ -510,12 +713,19 @@ export function StatementImportDialog() {
           )}
 
           {step === "parsing" && (
-            <ProcessingTimeline
-              stages={STAGE_ORDER.map((k) => stageStates[k])}
-              stats={stats}
-              elapsedMs={elapsed}
-              currentOperation={operation}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <ProcessingTimeline
+                stages={STAGE_ORDER.map((k) => stageStates[k])}
+                stats={stats}
+                elapsedMs={elapsed}
+                currentOperation={operation}
+              />
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={onCancelParsing}>
+                  <X className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Cancel parsing
+                </Button>
+              </div>
+            </div>
           )}
 
           {step === "confirm" && (
@@ -537,11 +747,51 @@ export function StatementImportDialog() {
               categories={categories}
               saving={saving}
               onBack={() => setStep("confirm")}
-              onSave={onSave}
+              onSave={requestSave}
             />
           )}
         </div>
+
+        <AlertDialog open={!!preview} onOpenChange={(v) => !v && setPreview(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Ready to import</AlertDialogTitle>
+              <AlertDialogDescription>
+                Nothing has been written yet. Review what will be saved, then confirm.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px] sm:grid-cols-3">
+              {[
+                ["Will be imported", previewSummary.included.toLocaleString()],
+                ["Excluded", previewSummary.excluded.toLocaleString()],
+                ["Possible duplicates", previewSummary.duplicates.toLocaleString()],
+                ["Distinct payees", previewSummary.payees.toLocaleString()],
+                ["New payees saved", previewSummary.newPayees.toLocaleString()],
+                ["Uncategorised", previewSummary.uncategorized.toLocaleString()],
+                ["Date range", `${previewSummary.from} → ${previewSummary.to}`],
+              ].map(([label, value]) => (
+                <div key={label as string} className="rounded-[10px] border border-border px-2.5 py-1.5">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+                  <dd className="font-medium tabular-nums">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+              <Archive className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              {archived
+                ? "The original file is archived privately, so this import can be audited or re-parsed later."
+                : "The original file is not archived — enable the statements archive in Settings to keep it for audit and re-parse."}
+            </p>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Back to review</AlertDialogCancel>
+              <AlertDialogAction onClick={commitSave}>
+                Import {previewSummary.included.toLocaleString()} transactions
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
 }
+

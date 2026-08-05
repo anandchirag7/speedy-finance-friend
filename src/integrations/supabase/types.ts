@@ -1506,44 +1506,97 @@ export type Database = {
         }
         Relationships: []
       }
+      statement_archive_settings: {
+        Row: {
+          archive_enabled: boolean
+          created_at: string
+          household_id: string
+          retention_days: number
+          updated_at: string
+        }
+        Insert: {
+          archive_enabled?: boolean
+          created_at?: string
+          household_id: string
+          retention_days?: number
+          updated_at?: string
+        }
+        Update: {
+          archive_enabled?: boolean
+          created_at?: string
+          household_id?: string
+          retention_days?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "statement_archive_settings_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: true
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       statement_uploads: {
         Row: {
+          archive_expires_at: string | null
           created_at: string
           error: string | null
           filename: string
           household_id: string | null
           id: string
+          import_token: string | null
+          imported_at: string | null
+          inserted_count: number
+          mime_type: string | null
           processed_transactions: number
           result: Json
+          size_bytes: number | null
           status: Database["public"]["Enums"]["statement_upload_status"]
+          storage_path: string | null
           total_transactions: number
           unique_patterns: number
           updated_at: string
           user_id: string
         }
         Insert: {
+          archive_expires_at?: string | null
           created_at?: string
           error?: string | null
           filename: string
           household_id?: string | null
           id?: string
+          import_token?: string | null
+          imported_at?: string | null
+          inserted_count?: number
+          mime_type?: string | null
           processed_transactions?: number
           result?: Json
+          size_bytes?: number | null
           status?: Database["public"]["Enums"]["statement_upload_status"]
+          storage_path?: string | null
           total_transactions?: number
           unique_patterns?: number
           updated_at?: string
           user_id: string
         }
         Update: {
+          archive_expires_at?: string | null
           created_at?: string
           error?: string | null
           filename?: string
           household_id?: string | null
           id?: string
+          import_token?: string | null
+          imported_at?: string | null
+          inserted_count?: number
+          mime_type?: string | null
           processed_transactions?: number
           result?: Json
+          size_bytes?: number | null
           status?: Database["public"]["Enums"]["statement_upload_status"]
+          storage_path?: string | null
           total_transactions?: number
           unique_patterns?: number
           updated_at?: string
@@ -1726,6 +1779,7 @@ export type Database = {
           created_by: string | null
           household_id: string
           id: string
+          import_batch_id: string | null
           is_favorite: boolean
           is_flagged: boolean
           is_read: boolean
@@ -1757,6 +1811,7 @@ export type Database = {
           created_by?: string | null
           household_id: string
           id?: string
+          import_batch_id?: string | null
           is_favorite?: boolean
           is_flagged?: boolean
           is_read?: boolean
@@ -1788,6 +1843,7 @@ export type Database = {
           created_by?: string | null
           household_id?: string
           id?: string
+          import_batch_id?: string | null
           is_favorite?: boolean
           is_flagged?: boolean
           is_read?: boolean
