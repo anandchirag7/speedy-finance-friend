@@ -55,6 +55,24 @@ export const TransactionDetailDrawer = memo(function TransactionDetailDrawer({
                 {row.duplicate ? " · possible duplicate" : ""}
               </span>
             </Field>
+            {row.dup && (
+              <Field label="Why it's flagged as a duplicate">
+                <div className="space-y-1">
+                  <p>
+                    {row.dup.reason} ({Math.round(row.dup.confidence * 100)}% confidence,{" "}
+                    {row.dup.scope === "account" ? "already on this account" : "repeated in this file"})
+                  </p>
+                  <p className="text-muted-foreground">Match keys: {row.dup.matchKeys.join(", ")}</p>
+                  {row.dup.existing && (
+                    <p className="text-muted-foreground">
+                      Existing: {row.dup.existing.date} · {money(Number(row.dup.existing.amount))} ·{" "}
+                      {row.dup.existing.merchant || row.dup.existing.note || "—"}
+                    </p>
+                  )}
+                </div>
+              </Field>
+            )}
+
           </div>
         )}
       </SheetContent>
