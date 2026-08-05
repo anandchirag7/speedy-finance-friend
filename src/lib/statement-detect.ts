@@ -94,6 +94,40 @@ function readSlice(file: File, bytes: number): Promise<string> {
   });
 }
 
+/**
+ * Read a spreadsheet in the browser and flatten its cells into a text sample so
+ * bank / period / currency detection works the same way it does for CSV.
+ */
+async function readSpreadsheet(
+  file: File,
+): Promise<{ text: string; rows: number; sheets: number } | null> {
+  try {
+    const XLSX = await import("xlsx");
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array", cellDates: true, sheetRows: 5000 });
+    const parts: string[] = [];
+    let rows = 0;
+    for (const name of wb.SheetNames) {
+      const ws = wb.Sheets[name];
+      if (!ws) continue;
+      parts.push(name);
+      const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+        header: 1,
+        raw: false,
+        defval: "",
+        blankrows: false,
+      });
+      rows += Math.max(0, aoa.length - 1);
+      for (const r of aoa) parts.push(r.map((c) => String(c ?? "")).join(","));
+      if (parts.length > 20000) break;
+    }
+    return { text: parts.join("\n"), rows, sheets: wb.SheetNames.length };
+  } catch {
+    return null;
+  }
+}
+
+
 /** Cheap stable fingerprint (name + size + head bytes) used for duplicate detection. */
 function fingerprintOf(file: File, sample: string): string {
   let h = 2166136261;
