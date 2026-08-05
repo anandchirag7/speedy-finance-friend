@@ -38,9 +38,21 @@ export const VirtualizedTransactionList = memo(function VirtualizedTransactionLi
   const items = virtualizer.getVirtualItems();
   const last = items.length ? items[items.length - 1]!.index : 0;
 
+  // Prefetch the next cursor page well before the viewport reaches the end of
+  // the materialized window, so scrolling never stalls on a skeleton page.
+  const PREFETCH_AHEAD = 150;
   useEffect(() => {
-    if (last >= loadedCount - 40 && loadedCount < ids.length) onLoadMore();
+    if (loadedCount >= ids.length) return;
+    if (last < loadedCount - PREFETCH_AHEAD) return;
+    const idle: typeof requestAnimationFrame =
+      (globalThis as any).requestIdleCallback ?? requestAnimationFrame;
+    const handle = idle(() => onLoadMore());
+    return () => {
+      const cancel = (globalThis as any).cancelIdleCallback ?? cancelAnimationFrame;
+      cancel(handle as any);
+    };
   }, [last, loadedCount, ids.length, onLoadMore]);
+
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto overscroll-contain">
