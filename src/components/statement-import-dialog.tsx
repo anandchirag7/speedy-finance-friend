@@ -682,6 +682,8 @@ export function StatementImportDialog() {
           </DialogDescription>
         </DialogHeader>
 
+        <ActivityBanner activity={activity} onDismiss={() => setActivity({ kind: "idle" })} />
+
         {classification.status === "failed" && step === "confirm" && (
           <div className="rounded-[10px] border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive">
             Background naming failed — you can still rename payees manually before importing.
@@ -711,12 +713,19 @@ export function StatementImportDialog() {
           )}
 
           {step === "parsing" && (
-            <ProcessingTimeline
-              stages={STAGE_ORDER.map((k) => stageStates[k])}
-              stats={stats}
-              elapsedMs={elapsed}
-              currentOperation={operation}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <ProcessingTimeline
+                stages={STAGE_ORDER.map((k) => stageStates[k])}
+                stats={stats}
+                elapsedMs={elapsed}
+                currentOperation={operation}
+              />
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={onCancelParsing}>
+                  <X className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Cancel parsing
+                </Button>
+              </div>
+            </div>
           )}
 
           {step === "confirm" && (
@@ -738,11 +747,51 @@ export function StatementImportDialog() {
               categories={categories}
               saving={saving}
               onBack={() => setStep("confirm")}
-              onSave={onSave}
+              onSave={requestSave}
             />
           )}
         </div>
+
+        <AlertDialog open={!!preview} onOpenChange={(v) => !v && setPreview(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Ready to import</AlertDialogTitle>
+              <AlertDialogDescription>
+                Nothing has been written yet. Review what will be saved, then confirm.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px] sm:grid-cols-3">
+              {[
+                ["Will be imported", previewSummary.included.toLocaleString()],
+                ["Excluded", previewSummary.excluded.toLocaleString()],
+                ["Possible duplicates", previewSummary.duplicates.toLocaleString()],
+                ["Distinct payees", previewSummary.payees.toLocaleString()],
+                ["New payees saved", previewSummary.newPayees.toLocaleString()],
+                ["Uncategorised", previewSummary.uncategorized.toLocaleString()],
+                ["Date range", `${previewSummary.from} → ${previewSummary.to}`],
+              ].map(([label, value]) => (
+                <div key={label as string} className="rounded-[10px] border border-border px-2.5 py-1.5">
+                  <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+                  <dd className="font-medium tabular-nums">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+              <Archive className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+              {archived
+                ? "The original file is archived privately, so this import can be audited or re-parsed later."
+                : "The original file is not archived — enable the statements archive in Settings to keep it for audit and re-parse."}
+            </p>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Back to review</AlertDialogCancel>
+              <AlertDialogAction onClick={commitSave}>
+                Import {previewSummary.included.toLocaleString()} transactions
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
 }
+
