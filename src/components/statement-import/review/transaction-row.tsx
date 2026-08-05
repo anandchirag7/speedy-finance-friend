@@ -33,7 +33,9 @@ export const TransactionRow = memo(function TransactionRow({
   payees: string[];
   callbacks: RowCallbacks;
 }) {
+  countRowRender();
   return (
+
     <div
       className={cn(
         ROW_GRID,
