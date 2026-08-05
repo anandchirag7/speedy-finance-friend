@@ -597,6 +597,76 @@ export function StatementImportDialog() {
   };
 
 
+  const categoryName = useCallback(
+    (id: string | null) => (id ? categories.find((c) => c.id === id)?.name ?? "—" : "Uncategorized"),
+    [categories],
+  );
+
+  /** Fire-and-forget notification: in-app toast is primary, email is optional. */
+  const notify = useCallback(
+    (event: "parsed" | "imported" | "rolled_back" | "failed", ok: boolean, title: string, lines: string[]) => {
+      void notifyFn({ data: { event, ok, title, lines } })
+        .then((r: any) => {
+          if (r?.sent) toast.message("Notification email sent", { description: title });
+        })
+        .catch(() => undefined);
+    },
+    [notifyFn],
+  );
+
+  const exportMeta = (kind: "preview" | "imported", rowsForRange: ReviewRow[]) => {
+    const dates = rowsForRange.map((r) => r.date).filter(Boolean).sort();
+    return {
+      kind,
+      fileName: file?.name ?? "statement",
+      account:
+        (accounts as Array<{ id: string; name: string }>).find((a) => a.id === accountId)?.name ?? "—",
+      bank: bank || "—",
+      from: dates[0] ?? "—",
+      to: dates[dates.length - 1] ?? "—",
+    } as const;
+  };
+
+  const exportSummary = (rowsForRange: ReviewRow[]): Array<[string, string]> => {
+    const included = rowsForRange.filter((r) => r.include);
+    return [
+      ["Rows in statement", String(rowsForRange.length)],
+      ["Included", String(included.length)],
+      ["Excluded", String(rowsForRange.length - included.length)],
+      ["Flagged duplicates", String(rowsForRange.filter((r) => r.duplicate).length)],
+      ["Already on account", String(rowsForRange.filter((r) => r.dup?.scope === "account").length)],
+      ["Repeated in file", String(rowsForRange.filter((r) => r.dup?.scope === "file").length)],
+      ["Uncategorised", String(included.filter((r) => !r.category_id).length)],
+      ["Distinct payees", String(new Set(included.map((r) => r.payee).filter(Boolean)).size)],
+    ];
+  };
+
+  const doExport = (fmt: "csv" | "pdf", kind: "preview" | "imported", src: ReviewRow[]) => {
+    const rowsOut = kind === "imported" ? src.filter((r) => r.include) : src;
+    try {
+      const meta = exportMeta(kind, src);
+      if (fmt === "csv") exportImportToCSV(rowsOut, meta, exportSummary(src), categoryName);
+      else exportImportToPDF(rowsOut, meta, exportSummary(src), categoryName);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Export failed");
+    }
+  };
+
+  const rollback = async (batchId: string) => {
+    try {
+      const res: any = await undoFn({ data: { batchId } });
+      qc.invalidateQueries();
+      setLastBatch(null);
+      toast.success(`Rolled back ${Number(res?.deleted ?? 0).toLocaleString()} imported transactions`);
+      notify("rolled_back", true, "Statement import rolled back", [
+        `${Number(res?.deleted ?? 0).toLocaleString()} transactions were removed.`,
+        `Account balances were recalculated.`,
+      ]);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not roll back this import");
+    }
+  };
+
   /** Step 1 of saving: no write happens here — just stage the preview. */
   const requestSave = (finalRows: ReviewRow[]) => {
     setRows(finalRows);
