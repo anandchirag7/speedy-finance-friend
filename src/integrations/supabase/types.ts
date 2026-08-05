@@ -611,6 +611,62 @@ export type Database = {
           },
         ]
       }
+      data_reset_audit: {
+        Row: {
+          account_id: string | null
+          account_name: string | null
+          actor_id: string
+          completed_at: string | null
+          counts: Json
+          created_at: string
+          deleted: Json
+          error: string | null
+          household_id: string
+          id: string
+          kind: string
+          scopes: string[]
+          status: string
+        }
+        Insert: {
+          account_id?: string | null
+          account_name?: string | null
+          actor_id: string
+          completed_at?: string | null
+          counts?: Json
+          created_at?: string
+          deleted?: Json
+          error?: string | null
+          household_id: string
+          id?: string
+          kind?: string
+          scopes?: string[]
+          status?: string
+        }
+        Update: {
+          account_id?: string | null
+          account_name?: string | null
+          actor_id?: string
+          completed_at?: string | null
+          counts?: Json
+          created_at?: string
+          deleted?: Json
+          error?: string | null
+          household_id?: string
+          id?: string
+          kind?: string
+          scopes?: string[]
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "data_reset_audit_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       global_merchant_dictionary: {
         Row: {
           canonical_payee_name: string
