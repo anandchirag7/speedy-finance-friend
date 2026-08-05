@@ -1,9 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Upload, Sparkles, FileSearch, ListChecks, Table2 } from "lucide-react";
+import {
+  Upload,
+  Sparkles,
+  FileSearch,
+  ListChecks,
+  Table2,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  Archive,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +36,7 @@ import {
 import { listAccounts } from "@/lib/finance.functions";
 import { polishPayeeNames, bulkInsertTransactions } from "@/lib/statement-import.functions";
 import { startStatementUpload, saveMerchantCorrections } from "@/lib/statement-pipeline.functions";
+import { cancelStatementUpload } from "@/lib/statement-archive.functions";
 import { useStatementClassification } from "@/hooks/use-statement-classification";
 import type { StatementDetection } from "@/lib/statement-detect";
 import {
@@ -43,12 +65,19 @@ type Category = { id: string; name: string; kind: string; parent_id: string | nu
 
 type Step = "import" | "parsing" | "confirm" | "review";
 
+type Activity =
+  | { kind: "idle" }
+  | { kind: "busy"; label: string; detail?: string }
+  | { kind: "ok"; label: string; detail?: string }
+  | { kind: "error"; label: string; detail?: string };
+
 const STEPS: Array<{ key: Step; label: string; Icon: typeof FileSearch }> = [
   { key: "import", label: "Import", Icon: Upload },
   { key: "parsing", label: "Parsing", Icon: FileSearch },
   { key: "confirm", label: "Confirm payees", Icon: ListChecks },
   { key: "review", label: "Review", Icon: Table2 },
 ];
+
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
