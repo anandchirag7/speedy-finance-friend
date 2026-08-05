@@ -420,6 +420,10 @@ export const resetAccountData = createServerFn({ method: "POST" })
     } else {
       await sb.from("accounts").update({ current_balance: acct.opening_balance ?? 0 }).eq("id", id);
     }
-
-    return { ok: true, deleted: done, accountDeleted: data.deleteAccount };
+    await finishAudit(sb, auditId, { status: "success", deleted: done });
+    return { ok: true, deleted: done, accountDeleted: data.deleteAccount, auditId };
+    } catch (e: any) {
+      await finishAudit(sb, auditId, { status: "failed", deleted: done, error: String(e?.message ?? e) });
+      throw e;
+    }
   });
