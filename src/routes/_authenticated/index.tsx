@@ -24,7 +24,16 @@ const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "Dashboard — Paisa" }] }),
   component: Dashboard,
+  errorComponent: ({ reset }) => (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        We couldn't load your dashboard just now. This is usually a temporary session hiccup.
+      </p>
+      <Button onClick={reset}>Try again</Button>
+    </div>
+  ),
 });
+
 
 function Dashboard() {
   const dataFn = useServerFn(getDashboard);
