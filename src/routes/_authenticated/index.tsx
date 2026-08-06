@@ -14,6 +14,8 @@ import { listDashboards, createDashboard } from "@/lib/dashboards.functions";
 import { WIDGET_BY_TYPE } from "@/lib/dashboard-widgets";
 import { TEMPLATES } from "@/lib/dashboard-templates";
 import { DashboardBuilderDialog } from "@/components/dashboard-builder";
+import { withAuthRetry } from "@/lib/server-retry";
+
 
 const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
 
@@ -22,7 +24,16 @@ const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
 export const Route = createFileRoute("/_authenticated/")({
   head: () => ({ meta: [{ title: "Dashboard — Paisa" }] }),
   component: Dashboard,
+  errorComponent: ({ reset }) => (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        We couldn't load your dashboard just now. This is usually a temporary session hiccup.
+      </p>
+      <Button onClick={reset}>Try again</Button>
+    </div>
+  ),
 });
+
 
 function Dashboard() {
   const dataFn = useServerFn(getDashboard);
@@ -35,12 +46,15 @@ function Dashboard() {
 
   const { data: metrics, isLoading } = useQuery({
     queryKey: ["dashboard", range],
-    queryFn: () => dataFn({ data: { range } }),
+    queryFn: () => withAuthRetry(() => dataFn({ data: { range } })),
+    retry: 1,
   });
   const { data: dashboards = [], refetch } = useQuery({
     queryKey: ["dashboards"],
-    queryFn: () => listFn(),
+    queryFn: () => withAuthRetry(() => listFn()),
+    retry: 1,
   });
+
 
   const current = useMemo(
     () => dashboards.find((d) => d.id === activeId) ?? dashboards.find((d) => d.is_default) ?? dashboards[0],
