@@ -35,12 +35,15 @@ function Dashboard() {
 
   const { data: metrics, isLoading } = useQuery({
     queryKey: ["dashboard", range],
-    queryFn: () => dataFn({ data: { range } }),
+    queryFn: () => withAuthRetry(() => dataFn({ data: { range } })),
+    retry: 1,
   });
   const { data: dashboards = [], refetch } = useQuery({
     queryKey: ["dashboards"],
-    queryFn: () => listFn(),
+    queryFn: () => withAuthRetry(() => listFn()),
+    retry: 1,
   });
+
 
   const current = useMemo(
     () => dashboards.find((d) => d.id === activeId) ?? dashboards.find((d) => d.is_default) ?? dashboards[0],
