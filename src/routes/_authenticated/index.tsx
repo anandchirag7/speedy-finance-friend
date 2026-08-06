@@ -14,6 +14,8 @@ import { listDashboards, createDashboard } from "@/lib/dashboards.functions";
 import { WIDGET_BY_TYPE } from "@/lib/dashboard-widgets";
 import { TEMPLATES } from "@/lib/dashboard-templates";
 import { DashboardBuilderDialog } from "@/components/dashboard-builder";
+import { withAuthRetry } from "@/lib/server-retry";
+
 
 const GridLayout: any = (RGL as any).GridLayout ?? (RGL as any).default ?? RGL;
 
