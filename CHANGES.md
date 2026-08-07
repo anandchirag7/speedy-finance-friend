@@ -43,3 +43,9 @@ This file tracks all modified and newly created files along with their date of c
 - `src/components/statement-import/review/category-combobox.tsx`
 - `src/components/statement-import/review/payee-combobox.tsx`
 - `CHANGES.md`
+
+## 2026-08-07
+- `src/components/statement-import-dialog.tsx`
+- `src/routes/auth.tsx`
+- `src/lib/demo.functions.ts`
+- `CHANGES.md`

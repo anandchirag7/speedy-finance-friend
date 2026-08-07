@@ -8,19 +8,24 @@ export const ensureDemoAccount = createServerFn({ method: "POST" }).handler(asyn
 
   // 1. Ensure user exists (idempotent)
   let userId: string | null = null;
-  const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
-  const existing = list?.users?.find((u) => u.email?.toLowerCase() === DEMO_EMAIL);
-  if (existing) {
-    userId = existing.id;
-  } else {
-    const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
-      email: DEMO_EMAIL,
-      password: DEMO_PASSWORD,
-      email_confirm: true,
-      user_metadata: { display_name: "Demo User" },
-    });
-    if (error) throw error;
-    userId = created.user!.id;
+  try {
+    const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+    const existing = list?.users?.find((u) => u.email?.toLowerCase() === DEMO_EMAIL);
+    if (existing) {
+      userId = existing.id;
+    } else {
+      const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
+        email: DEMO_EMAIL,
+        password: DEMO_PASSWORD,
+        email_confirm: true,
+        user_metadata: { display_name: "Demo User" },
+      });
+      if (error) throw error;
+      userId = created.user!.id;
+    }
+  } catch (err) {
+    console.warn("[Demo] Admin user check fallback:", err);
+    return { email: DEMO_EMAIL, password: DEMO_PASSWORD, seeded: false };
   }
 
   // 2. Find household (created by handle_new_user trigger)

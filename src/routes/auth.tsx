@@ -95,14 +95,48 @@ function AuthPage() {
 
   const tryDemo = async () => {
     setBusy(true);
+    const DEMO_EMAIL = "demo@paisa.app";
+    const DEMO_PASSWORD = "DemoPaisa!2026";
     try {
-      const creds = await ensureDemoAccount();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: creds.email,
-        password: creds.password,
+      // 1. Try server function first
+      try {
+        const creds = await ensureDemoAccount();
+        const { error } = await supabase.auth.signInWithPassword({
+          email: creds.email,
+          password: creds.password,
+        });
+        if (!error) {
+          toast.success(creds.seeded ? "Demo account ready with sample data" : "Signed in to demo account");
+          goNext();
+          return;
+        }
+      } catch (srvErr) {
+        console.warn("Server demo creation fallback:", srvErr);
+      }
+
+      // 2. Client fallback sign in / sign up
+      let { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: DEMO_EMAIL,
+        password: DEMO_PASSWORD,
       });
-      if (error) throw error;
-      toast.success(creds.seeded ? "Demo account ready with sample data" : "Signed in to demo account");
+
+      if (signInErr) {
+        // Try sign up if user does not exist yet
+        const { error: signUpErr } = await supabase.auth.signUp({
+          email: DEMO_EMAIL,
+          password: DEMO_PASSWORD,
+          options: { data: { display_name: "Demo User" } },
+        });
+        if (signUpErr) throw signUpErr;
+        // Sign in after sign up
+        const { error: retryErr } = await supabase.auth.signInWithPassword({
+          email: DEMO_EMAIL,
+          password: DEMO_PASSWORD,
+        });
+        if (retryErr) throw retryErr;
+      }
+
+      toast.success("Signed in to demo account");
       goNext();
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to load demo");
