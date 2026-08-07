@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Pencil, RefreshCw,
   Download, MoreHorizontal, Plus, Search, Filter, Settings2, Sparkles, Flag,
-  CheckCircle2, Star, Trash2, Save, ChevronDown, Wallet, TrendingUp, TrendingDown,
+  CheckCircle2, Star, Trash2, Save, ChevronDown, ChevronRight, CreditCard, Wallet, TrendingUp, TrendingDown,
   Calendar as CalendarIcon, ClipboardCheck, FileSpreadsheet, Printer, Bell,
   Zap, LayoutGrid, LineChart as LineIcon, BarChart3, PieChart as PieIcon, X,
 } from "lucide-react";
@@ -182,6 +182,79 @@ function AccountRegisterPage() {
     return sorted.map((t) => ({ ...t, running: map.get(t.id) ?? 0 }));
   }, [sorted, opening]);
 
+  // ---- EMI Hierarchy dynamic linking (for both DB split_parent_id and runtime fallback)
+  const withEmiHierarchy = useMemo(() => {
+    const parentMap = new Map<string, string>(); // childId -> parentId
+    const cleanStr = (s: string) => (s ?? "").replace(/[^a-zA-Z0-9]+/g, " ").toUpperCase();
+
+    const isEmiCredit = (t: any) => {
+      const s = cleanStr(`${t.merchant ?? ""} ${t.memo ?? ""} ${t.note ?? ""}`);
+      return /AGGREGATOR.*EMI|OFFUS.*CREDIT|SMART.*EMI|EMI.*CONVERSION|LOAN.*CREDIT/i.test(s);
+    };
+
+    const isEmiChild = (t: any) => {
+      const s = cleanStr(`${t.merchant ?? ""} ${t.memo ?? ""} ${t.note ?? ""}`);
+      return /OFFUS.*EMI|MER.*EMI|SMART.*EMI|EMI.*PRIN|EMI.*INT|PROCNG.*FEE|INSTALMENT|INSTALLMENT/i.test(s);
+    };
+
+    for (const t of withRunning) {
+      if ((t as any).split_parent_id) {
+        parentMap.set(t.id, (t as any).split_parent_id);
+      }
+    }
+
+    // Dynamic grouping fallback for transactions imported without split_parent_id
+    for (const c of withRunning) {
+      if (isEmiCredit(c) && !parentMap.has(c.id)) {
+        const creditAmt = Number(c.amount);
+        let bestParent: any = null;
+        let bestDiff = Infinity;
+        for (const p of withRunning) {
+          if (p.id === c.id || parentMap.has(p.id)) continue;
+          if (isEmiChild(p) || isEmiCredit(p)) continue;
+          const candidateStr = cleanStr(`${p.merchant ?? ""} ${p.memo ?? ""} ${p.note ?? ""}`);
+          const diff = Math.abs(Number(p.amount) - creditAmt);
+
+          // Pair loan credit with exact/near amount matching parent purchase (or merchant match)
+          const isParentCandidate = candidateStr.includes("MOTHERCARE") || diff < 50 || p.type === "expense";
+          if (isParentCandidate) {
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              bestParent = p;
+            }
+          }
+        }
+        if (bestParent) {
+          parentMap.set(c.id, bestParent.id);
+          const parentStr = cleanStr(`${bestParent.merchant ?? ""} ${bestParent.memo ?? ""} ${bestParent.note ?? ""}`);
+          // Link installment and fee rows matching this parent's reference or date
+          for (const inst of withRunning) {
+            if (inst.id !== bestParent.id && inst.id !== c.id && isEmiChild(inst) && !parentMap.has(inst.id)) {
+              const instStr = cleanStr(`${inst.merchant ?? ""} ${inst.memo ?? ""} ${inst.note ?? ""}`);
+              // Check if installment shares reference code (e.g. OFFUS, MER, SMART) or date proximity
+              const refMatch =
+                (parentStr.includes("OFFUS") && instStr.includes("OFFUS")) ||
+                (parentStr.includes("MOTHERCARE") && (instStr.includes("OFFUS") || instStr.includes("MER"))) ||
+                !parentStr.includes("OFFUS");
+              if (refMatch) {
+                parentMap.set(inst.id, bestParent.id);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return withRunning.map((t) => {
+      const isChildEligible = isEmiCredit(t) || isEmiChild(t);
+      const parentId = isChildEligible ? (parentMap.get(t.id) ?? (t as any).split_parent_id ?? null) : null;
+      return {
+        ...t,
+        split_parent_id: parentId,
+      };
+    });
+  }, [withRunning]);
+
   // ---- KPIs
   const kpis = useMemo(() => computeKpis(txns, account), [txns, account]);
   const balanceSeries = useMemo(() => buildBalanceSeries(txns, opening), [txns, opening]);
@@ -216,6 +289,10 @@ function AccountRegisterPage() {
   const bal = Number(account?.current_balance ?? 0);
   const isLiability = !!account?.is_liability;
   const currency = account?.currency ?? "INR";
+  const creditLimit = Number((account as any)?.credit_limit ?? (account as any)?.details?.credit_limit ?? 0);
+  const outstandingDebt = Math.abs(bal);
+  const availableCredit = creditLimit > 0 ? Math.max(0, creditLimit - outstandingDebt) : null;
+  const utilizationPct = creditLimit > 0 ? Math.min(100, Math.round((outstandingDebt / creditLimit) * 100)) : null;
 
   if (!account && accounts.length) {
     return (
@@ -268,19 +345,42 @@ function AccountRegisterPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-[auto_auto] md:gap-6">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-[auto_auto_auto] md:gap-6">
               <div className="rounded-xl border bg-background/60 px-4 py-3">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Current Balance</p>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {isLiability ? "Outstanding Debt" : "Current Balance"}
+                </p>
                 <p className={cn("mt-1 font-display text-2xl font-semibold tabular-nums", isLiability && bal > 0 ? "text-red-600" : "")}>
                   {isLiability && bal > 0 ? "-" : ""}{formatCurrency(bal, currency)}
                 </p>
               </div>
-              <div className="rounded-xl border bg-background/60 px-4 py-3">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Opening</p>
-                <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-muted-foreground">
-                  {formatCurrency(opening, currency)}
-                </p>
-              </div>
+
+              {creditLimit > 0 && availableCredit !== null ? (
+                <div className="rounded-xl border bg-background/60 px-4 py-3 min-w-[180px]">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Available Credit</p>
+                    <span className={cn("text-xs font-bold tabular-nums", (utilizationPct ?? 0) > 50 ? "text-red-600" : (utilizationPct ?? 0) > 30 ? "text-amber-600" : "text-emerald-600")}>
+                      {utilizationPct}% used
+                    </span>
+                  </div>
+                  <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-emerald-600">
+                    {formatCurrency(availableCredit, currency)}
+                  </p>
+                  <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={cn("h-full transition-all", (utilizationPct ?? 0) > 50 ? "bg-red-500" : (utilizationPct ?? 0) > 30 ? "bg-amber-500" : "bg-emerald-500")}
+                      style={{ width: `${utilizationPct}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border bg-background/60 px-4 py-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Opening</p>
+                  <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-muted-foreground">
+                    {formatCurrency(opening, currency)}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -314,7 +414,16 @@ function AccountRegisterPage() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
           <KpiCard label="Income (MTD)" value={formatCurrency(kpis.incomeMTD, currency)} trend={kpis.incomeDelta} tone="pos" spark={kpis.spark.income} />
           <KpiCard label="Expenses (MTD)" value={formatCurrency(kpis.expenseMTD, currency)} trend={kpis.expenseDelta} tone="neg" spark={kpis.spark.expense} />
-          <KpiCard label="Net Cash Flow" value={formatCurrency(kpis.net, currency)} tone={kpis.net >= 0 ? "pos" : "neg"} spark={kpis.spark.net} />
+          {creditLimit > 0 ? (
+            <KpiCard
+              label="Credit Utilization"
+              value={`${utilizationPct}%`}
+              tone={(utilizationPct ?? 0) > 50 ? "neg" : (utilizationPct ?? 0) > 30 ? "warn" : "pos"}
+              hint={`Limit: ${formatCurrency(creditLimit, currency)}`}
+            />
+          ) : (
+            <KpiCard label="Net Cash Flow" value={formatCurrency(kpis.net, currency)} tone={kpis.net >= 0 ? "pos" : "neg"} spark={kpis.spark.net} />
+          )}
           <KpiCard label="Avg Daily Balance" value={formatLakhCrore(kpis.avgDaily)} tone="neutral" spark={balanceSeries.map(p => p.v)} />
           <KpiCard label="Largest Expense" value={formatCurrency(kpis.largestExpense, currency)} tone="neg" />
           <KpiCard label="Largest Deposit" value={formatCurrency(kpis.largestDeposit, currency)} tone="pos" />
@@ -576,19 +685,22 @@ function AccountRegisterPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {withRunning.map((t) => (
-                    <RegisterRow
-                      key={t.id}
-                      t={t as any}
-                      density={density}
-                      selected={selected.has(t.id)}
-                      onSelect={(v) => { const s = new Set(selected); v ? s.add(t.id) : s.delete(t.id); setSelected(s); }}
-                      onOpen={() => setDetailId(t.id)}
-                      onFlag={() => patchM.mutate({ id: t.id, patch: { is_flagged: !t.is_flagged } })}
-                      onReview={() => patchM.mutate({ id: t.id, patch: { is_reviewed: !t.is_reviewed } })}
-                      currency={currency}
-                    />
-                  ))}
+                  {withEmiHierarchy
+                    .filter((t: any) => !t.split_parent_id)
+                    .map((t) => (
+                      <RegisterRow
+                        key={t.id}
+                        t={t as any}
+                        allTxns={withEmiHierarchy as any}
+                        density={density}
+                        selected={selected.has(t.id)}
+                        onSelect={(v) => { const s = new Set(selected); v ? s.add(t.id) : s.delete(t.id); setSelected(s); }}
+                        onOpen={() => setDetailId(t.id)}
+                        onFlag={() => patchM.mutate({ id: t.id, patch: { is_flagged: !t.is_flagged } })}
+                        onReview={() => patchM.mutate({ id: t.id, patch: { is_reviewed: !t.is_reviewed } })}
+                        currency={currency}
+                      />
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -679,74 +791,136 @@ function Sparkline({ values, tone }: { values: number[]; tone: string }) {
 }
 
 /* ============================== register row ============================== */
-function RegisterRow({ t, density, selected, onSelect, onOpen, onFlag, onReview, currency }: {
-  t: Txn & { running: number }; density: "compact" | "comfortable" | "spacious";
+function RegisterRow({ t, density, selected, onSelect, onOpen, onFlag, onReview, currency, allTxns = [] }: {
+  t: Txn & { running: number; split_parent_id?: string | null }; density: "compact" | "comfortable" | "spacious";
   selected: boolean; onSelect: (v: boolean) => void; onOpen: () => void;
   onFlag: () => void; onReview: () => void; currency: string;
+  allTxns?: (Txn & { running: number; split_parent_id?: string | null })[];
 }) {
+  const [expanded, setExpanded] = useState(false);
   const pad = density === "compact" ? "py-1.5" : density === "spacious" ? "py-4" : "py-2.5";
   const amt = Number(t.amount);
   const isPending = t.cleared_status === "pending";
   const typeColor = t.type === "income" ? "text-emerald-600" : t.type === "expense" ? "text-red-600" : "text-blue-600";
 
+  // Find any child transactions (disbursement credit, processing fee, installments)
+  const children = allTxns.filter((c) => c.split_parent_id === t.id);
+  const isEmiParent = children.length > 0;
+
   return (
-    <tr className={cn(
-      "group border-b transition hover:bg-accent/40 cursor-pointer",
-      selected && "bg-primary/5",
-      isPending && "bg-amber-50/40 dark:bg-amber-950/10",
-    )} onClick={onOpen}>
-      <td className={cn("px-3", pad)} onClick={(e) => e.stopPropagation()}>
-        <Checkbox checked={selected} onCheckedChange={(v) => onSelect(!!v)} />
-      </td>
-      <td className={cn("px-1", pad)} onClick={(e) => e.stopPropagation()}>
-        <button onClick={onFlag} className={cn("rounded p-1 hover:bg-accent", t.is_flagged ? "text-amber-500" : "text-muted-foreground/40")}>
-          <Flag className="h-3.5 w-3.5" fill={t.is_flagged ? "currentColor" : "none"} />
-        </button>
-      </td>
-      <td className={cn("px-3 tabular-nums text-muted-foreground", pad)}>{formatDate(t.txn_date)}</td>
-      <td className={cn("px-3 min-w-[240px]", pad)}>
-        <div className="flex items-center gap-2">
-          <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-            t.type === "income" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200"
-              : t.type === "expense" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200"
-              : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200")}>
-            {(t.merchant ?? t.category?.name ?? "?")[0]?.toUpperCase()}
+    <>
+      <tr className={cn(
+        "group border-b transition hover:bg-accent/40 cursor-pointer",
+        selected && "bg-primary/5",
+        isPending && "bg-amber-50/40 dark:bg-amber-950/10",
+        isEmiParent && "bg-purple-50/20 dark:bg-purple-950/10",
+      )} onClick={onOpen}>
+        <td className={cn("px-3", pad)} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-1">
+            {children.length > 0 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+                className="rounded p-0.5 hover:bg-muted text-muted-foreground"
+              >
+                {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <Checkbox checked={selected} onCheckedChange={(v) => onSelect(!!v)} />
           </div>
-          <div className="min-w-0">
-            <p className="truncate font-medium">{t.merchant ?? t.memo ?? "(untitled)"}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {t.memo && t.merchant ? t.memo : ""}
-              {t.check_number ? ` · #${t.check_number}` : ""}
-              {t.tags?.length ? ` · ${t.tags.slice(0, 2).join(", ")}` : ""}
-            </p>
-          </div>
-        </div>
-      </td>
-      <td className={cn("px-3", pad)}>
-        {t.category ? (
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.category.color ?? "hsl(var(--muted-foreground))" }} />
-            {t.category.name}
-          </span>
-        ) : <span className="text-xs text-muted-foreground italic">Uncategorized</span>}
-      </td>
-      <td className={cn("px-3 text-xs text-muted-foreground", pad)}>{t.payment_method ?? "—"}</td>
-      <td className={cn("px-3 text-right tabular-nums", pad, t.type === "expense" ? typeColor : "text-muted-foreground/50")}>
-        {t.type === "expense" ? formatCurrency(amt, currency) : "—"}
-      </td>
-      <td className={cn("px-3 text-right tabular-nums", pad, t.type === "income" ? typeColor : "text-muted-foreground/50")}>
-        {t.type === "income" ? formatCurrency(amt, currency) : "—"}
-      </td>
-      <td className={cn("px-3 text-right tabular-nums font-medium", pad)}>{formatCurrency(t.running, currency)}</td>
-      <td className={cn("pr-2", pad)} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          <button onClick={onReview} className={cn("rounded p-1 hover:bg-accent", t.is_reviewed ? "text-emerald-600" : "text-muted-foreground/40")} title="Toggle reviewed">
-            <CheckCircle2 className="h-3.5 w-3.5" />
+        </td>
+        <td className={cn("px-1", pad)} onClick={(e) => e.stopPropagation()}>
+          <button onClick={onFlag} className={cn("rounded p-1 hover:bg-accent", t.is_flagged ? "text-amber-500" : "text-muted-foreground/40")}>
+            <Flag className="h-3.5 w-3.5" fill={t.is_flagged ? "currentColor" : "none"} />
           </button>
-          {t.attachment_count > 0 && <span className="rounded p-1 text-muted-foreground">📎</span>}
-        </div>
-      </td>
-    </tr>
+        </td>
+        <td className={cn("px-3 tabular-nums text-muted-foreground", pad)}>{formatDate(t.txn_date)}</td>
+        <td className={cn("px-3 min-w-[240px]", pad)}>
+          <div className="flex items-center gap-2">
+            <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+              t.type === "income" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200"
+                : t.type === "expense" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200"
+                : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200")}>
+              {(t.merchant ?? t.category?.name ?? "?")[0]?.toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="truncate font-medium">{t.merchant ?? t.memo ?? "(untitled)"}</p>
+                {isEmiParent && (
+                  <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.2 text-[10px] font-semibold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                    <CreditCard className="h-3 w-3" /> EMI
+                  </span>
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {t.memo && t.merchant ? t.memo : ""}
+                {t.check_number ? ` · #${t.check_number}` : ""}
+                {t.tags?.length ? ` · ${t.tags.slice(0, 2).join(", ")}` : ""}
+              </p>
+            </div>
+          </div>
+        </td>
+        <td className={cn("px-3", pad)}>
+          {t.category ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs">
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.category.color ?? "hsl(var(--muted-foreground))" }} />
+              {t.category.name}
+            </span>
+          ) : <span className="text-xs text-muted-foreground italic">Uncategorized</span>}
+        </td>
+        <td className={cn("px-3 text-xs text-muted-foreground", pad)}>{t.payment_method ?? "—"}</td>
+        <td className={cn("px-3 text-right tabular-nums", pad, t.type === "expense" ? typeColor : "text-muted-foreground/50")}>
+          {t.type === "expense" ? formatCurrency(amt, currency) : "—"}
+        </td>
+        <td className={cn("px-3 text-right tabular-nums", pad, t.type === "income" ? typeColor : "text-muted-foreground/50")}>
+          {t.type === "income" ? formatCurrency(amt, currency) : "—"}
+        </td>
+        <td className={cn("px-3 text-right tabular-nums font-medium", pad)}>{formatCurrency(t.running, currency)}</td>
+        <td className={cn("pr-2", pad)} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <button onClick={onReview} className={cn("rounded p-1 hover:bg-accent", t.is_reviewed ? "text-emerald-600" : "text-muted-foreground/40")} title="Toggle reviewed">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            </button>
+            {t.attachment_count > 0 && <span className="rounded p-1 text-muted-foreground">📎</span>}
+          </div>
+        </td>
+      </tr>
+
+      {/* Render EMI Children */}
+      {expanded && children.map((c) => {
+        const cAmt = Number(c.amount);
+        const cTypeColor = c.type === "income" ? "text-emerald-600" : "text-red-600";
+        return (
+          <tr key={c.id} className="bg-muted/30 hover:bg-muted/50 border-b text-xs transition">
+            <td className="px-3 py-2"></td>
+            <td className="px-1 py-2"></td>
+            <td className="px-3 py-2 tabular-nums text-muted-foreground pl-6">{formatDate(c.txn_date)}</td>
+            <td className="px-3 py-2 min-w-[240px] pl-6">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">└─</span>
+                <span className="font-medium text-foreground">{c.merchant ?? c.note ?? "EMI Detail"}</span>
+              </div>
+            </td>
+            <td className="px-3 py-2">
+              {c.category ? (
+                <span className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[11px]">
+                  {c.category.name}
+                </span>
+              ) : <span className="italic text-muted-foreground">EMI Repayment</span>}
+            </td>
+            <td className="px-3 py-2 text-muted-foreground">{c.payment_method ?? "—"}</td>
+            <td className={cn("px-3 py-2 text-right tabular-nums", c.type === "expense" ? cTypeColor : "text-muted-foreground/40")}>
+              {c.type === "expense" ? formatCurrency(cAmt, currency) : "—"}
+            </td>
+            <td className={cn("px-3 py-2 text-right tabular-nums", c.type === "income" ? cTypeColor : "text-muted-foreground/40")}>
+              {c.type === "income" ? formatCurrency(cAmt, currency) : "—"}
+            </td>
+            <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+            <td className="pr-2 py-2"></td>
+          </tr>
+        );
+      })}
+    </>
   );
 }
 

@@ -107,13 +107,12 @@ export function ReviewStep({
 
   const payees = useMemo(() => {
     const set = new Set<string>();
-    for (const id of orderedIds) {
-      const p = byId[id]?.payee?.trim();
+    for (const r of initialRows) {
+      const p = r.payee?.trim();
       if (p) set.add(p);
     }
     return [...set].sort((a, b) => a.localeCompare(b));
-    // Recomputed only when the store identity changes, not per keystroke.
-  }, [byId, orderedIds]);
+  }, [initialRows]);
 
   const filteredIds = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase();
@@ -132,7 +131,7 @@ export function ReviewStep({
         String(r.amount).includes(q)
       );
     });
-  }, [orderedIds, byId, filter, deferredQuery, selectedIds]);
+  }, [orderedIds, byId, filter, deferredQuery, (filter === "included" || filter === "excluded") ? selectedIds : null]);
 
   /** Rows a bulk action applies to: currently shown AND included. */
   const bulkTargets = useMemo(

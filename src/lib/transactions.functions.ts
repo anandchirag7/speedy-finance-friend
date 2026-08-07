@@ -44,7 +44,7 @@ export const listTransactionsRich = createServerFn({ method: "GET" })
         `id, account_id, transfer_account_id, category_id, type, amount, txn_date,
          note, memo, merchant, payment_method, check_number, tags, tax_code,
          cleared_status, is_flagged, is_favorite, is_reviewed, is_read,
-         attachment_count, comment_count, created_at,
+         attachment_count, comment_count, created_at, split_parent_id,
          category:categories(id, name, kind, color, icon),
          account:accounts!transactions_account_id_fkey(id, name, currency, institution),
          transfer_account:accounts!transactions_transfer_account_id_fkey(id, name)`,

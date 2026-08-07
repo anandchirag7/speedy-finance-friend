@@ -104,7 +104,14 @@ async function readSpreadsheet(
   try {
     const XLSX = await import("xlsx");
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array", cellDates: true, sheetRows: 5000 });
+    let wb: any;
+    try {
+      wb = XLSX.read(buf, { type: "array", cellDates: true, sheetRows: 5000 });
+    } catch {
+      // Fallback for banks exporting HTML/CSV text with .xls/.xlsx extension
+      const text = new TextDecoder("utf-8").decode(buf);
+      wb = XLSX.read(text, { type: "string", cellDates: true, sheetRows: 5000 });
+    }
     const parts: string[] = [];
     let rows = 0;
     for (const name of wb.SheetNames) {
@@ -123,6 +130,16 @@ async function readSpreadsheet(
     }
     return { text: parts.join("\n"), rows, sheets: wb.SheetNames.length };
   } catch {
+    // If binary reading failed, try reading text content directly
+    try {
+      const text = await readSlice(file, 1_500_000);
+      if (text.trim().length > 0) {
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        return { text, rows: lines.length, sheets: 1 };
+      }
+    } catch {
+      return null;
+    }
     return null;
   }
 }
@@ -148,13 +165,14 @@ function toIso(raw: string): string | null {
   if (iso) return `${iso[1]}-${iso[2]!.padStart(2, "0")}-${iso[3]!.padStart(2, "0")}`;
   const dmy = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(s);
   if (dmy) {
-    const year = dmy[3]!.length === 2 ? `20${dmy[3]}` : dmy[3]!;
-    const d = Number(dmy[1]);
-    const m = Number(dmy[2]);
-    // Prefer DD/MM (Indian statements); fall back when clearly MM/DD.
-    const day = d > 12 ? d : m > 12 ? m : d;
-    const month = d > 12 ? m : m > 12 ? d : m;
-    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    let [_, a, b, y] = dmy;
+    let yr = Number(y);
+    if (yr < 100) yr += yr < 50 ? 2000 : 1900;
+    let day = Number(a), mon = Number(b);
+    if (mon > 12 && day <= 12) { const t = day; day = mon; mon = t; }
+    if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
+      return `${yr}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
   }
   const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const dmon = /^(\d{1,2})-([a-z]{3})[a-z]*-?(\d{2,4})?$/i.exec(s);
@@ -235,9 +253,7 @@ export async function inspectStatementFile(
   }
 
   if (isSheet) {
-    if (format === "xlsx" && !headSample.startsWith("PK")) {
-      issues.push({ level: "error", code: "corrupt", message: "This XLSX file looks corrupted." });
-    } else if (!sheet) {
+    if (!sheet) {
       issues.push({
         level: "error",
         code: "corrupt",

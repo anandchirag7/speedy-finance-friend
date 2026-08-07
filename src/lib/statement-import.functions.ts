@@ -45,17 +45,19 @@ const PAYMENT_NOISE = new Set([
 ]);
 
 const CATEGORY_HINTS: Array<{ words: string[]; categories: string[]; type?: "expense" | "income" | "transfer" }> = [
-  { words: ["SALARY", "PAYROLL", "WAGES", "BONUS"], categories: ["Salary", "Income"], type: "income" },
-  { words: ["INTEREST", "DIVIDEND", "CASHBACK", "REFUND"], categories: ["Income", "Interest", "Refund"], type: "income" },
-  { words: ["SWIGGY", "ZOMATO", "DOMINOS", "MCDONALD", "STARBUCKS", "RESTAURANT", "CAFE"], categories: ["Food", "Dining", "Restaurants"] },
-  { words: ["UBER", "OLA", "RAPIDO", "METRO", "FUEL", "PETROL", "DIESEL", "PARKING"], categories: ["Transport", "Travel", "Fuel"] },
-  { words: ["AMAZON", "FLIPKART", "MYNTRA", "AJIO", "NYKAA", "SHOP"], categories: ["Shopping"] },
+  { words: ["SALARY", "PAYROLL", "WAGES", "BONUS"], categories: ["Salary", "Salary & Income", "Income"], type: "income" },
+  { words: ["INTEREST", "DIVIDEND", "CASHBACK", "REFUND"], categories: ["Income", "Interest", "Refund", "Other Income"], type: "income" },
+  { words: ["SWIGGY", "ZOMATO", "DOMINOS", "MCDONALD", "STARBUCKS", "RESTAURANT", "CAFE", "BAKERY", "FOOD"], categories: ["Food & Dining", "Food", "Dining", "Restaurants"] },
+  { words: ["BLINKIT", "INSTAMART", "ZEPTO", "BIGBASKET", "GROCERY", "SUPERMARKET", "MART"], categories: ["Groceries", "Food & Dining"] },
+  { words: ["UBER", "OLA", "RAPIDO", "METRO", "FUEL", "PETROL", "DIESEL", "PARKING", "FASTAG"], categories: ["Transport", "Fuel", "Travel"] },
+  { words: ["AMAZON", "FLIPKART", "MYNTRA", "AJIO", "NYKAA", "SHOP", "MOTHERCARE", "RETAIL", "STORE"], categories: ["Shopping", "Kids & Family"] },
   { words: ["NETFLIX", "SPOTIFY", "HOTSTAR", "PRIME", "BOOKMYSHOW", "YOUTUBE"], categories: ["Entertainment", "Subscriptions"] },
-  { words: ["AIRTEL", "JIO", "VI ", "VODAFONE", "MOBILE", "BROADBAND", "WIFI"], categories: ["Bills", "Utilities", "Phone"] },
-  { words: ["ELECTRICITY", "WATER", "GAS", "BESCOM", "TATA POWER"], categories: ["Utilities", "Bills"] },
-  { words: ["RENT", "MAINTENANCE", "SOCIETY"], categories: ["Rent", "Housing"] },
-  { words: ["EMI", "LOAN", "CREDIT CARD", "CC PAYMENT"], categories: ["Loan", "Debt", "Credit Card"], type: "transfer" },
-  { words: ["HOSPITAL", "PHARMACY", "MEDICAL", "APOLLO", "PRACTO"], categories: ["Health", "Medical"] },
+  { words: ["AIRTEL", "JIO", "VI ", "VODAFONE", "MOBILE", "BROADBAND", "WIFI"], categories: ["Bills & Utilities", "Bills", "Utilities", "Phone"] },
+  { words: ["ELECTRICITY", "WATER", "GAS", "BESCOM", "TATA POWER"], categories: ["Bills & Utilities", "Utilities", "Bills"] },
+  { words: ["RENT", "MAINTENANCE", "SOCIETY"], categories: ["Housing & Rent", "Housing", "Rent"] },
+  { words: ["OFFUS EMI", "MER EMI", "SMART EMI", "EMI", "LOAN"], categories: ["Loans & EMI", "Loan", "Debt"], type: "transfer" },
+  { words: ["CREDIT CARD", "CC PAYMENT", "BPPY CC", "CRED"], categories: ["Transfers", "Credit Card", "Loan"], type: "transfer" },
+  { words: ["HOSPITAL", "PHARMACY", "MEDICAL", "APOLLO", "MANIPAL", "PRACTO", "MEDPLUS", "CLINIC"], categories: ["Health & Medical", "Health", "Medical"] },
   { words: ["SCHOOL", "COLLEGE", "TUITION", "COURSE", "UDEMY"], categories: ["Education"] },
 ];
 
@@ -395,7 +397,14 @@ export const extractStatementRows = createServerFn({ method: "POST" })
     if (isExcel) {
       const XLSX = await import("xlsx");
       const buf = Buffer.from(data.base64, "base64");
-      const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
+      let wb: any;
+      try {
+        wb = XLSX.read(buf, { type: "buffer", cellDates: false });
+      } catch {
+        // Fallback for banks exporting text/HTML with .xls extension
+        const text = buf.toString("utf-8");
+        wb = XLSX.read(text, { type: "string" });
+      }
       for (const name of wb.SheetNames) {
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, blankrows: false }) as any[][];
         const rows = extractRowsFromAOA(aoa);
@@ -405,8 +414,14 @@ export const extractStatementRows = createServerFn({ method: "POST" })
     } else if (isCsv) {
       const XLSX = await import("xlsx");
       const text = Buffer.from(data.base64, "base64").toString("utf-8");
-      const wb = XLSX.read(text, { type: "string" });
-      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, blankrows: false }) as any[][];
+      let aoa: any[][] = [];
+      try {
+        const wb = XLSX.read(text, { type: "string" });
+        aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, blankrows: false }) as any[][];
+      } catch {
+        // Line-by-line fallback for text files
+        aoa = text.split(/\r?\n/).map((line) => line.split(/\t+|,/));
+      }
       extracted = extractRowsFromAOA(aoa);
     } else if (isPdf) {
       const apiKey = process.env.LOVABLE_API_KEY;
@@ -588,6 +603,7 @@ const bulkInput = z.object({
         category_id: z.string().uuid().nullable().optional(),
         merchant: z.string().max(200).nullable().optional(),
         note: z.string().max(500).optional().nullable(),
+        split_parent_id: z.string().uuid().nullable().optional(),
       }),
     )
     .min(1)
@@ -737,26 +753,130 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
       if (upErr) throw upErr;
     }
 
-    // ---- Transaction inserts ----
+    // ---- Transaction inserts & EMI Hierarchy linking ----
     const batchId = data.importToken ?? crypto.randomUUID();
-    const rows = data.transactions.map((t) => ({
-      ...t,
-      account_id: data.accountId,
-      household_id: householdId,
-      created_by: context.userId,
-      tags: [],
-      import_batch_id: batchId,
-    }));
+    const rawTxns = [...data.transactions];
 
-    const CHUNK = 500;
+    const cleanStr = (s: string) => (s ?? "").replace(/[^a-zA-Z0-9]+/g, " ").toUpperCase();
+
+    // Helper to test if a row is an EMI loan disbursement credit
+    const isEmiCredit = (t: any) => {
+      const s = cleanStr(`${t.description ?? ""} ${t.merchant ?? ""} ${t.note ?? ""}`);
+      return /AGGREGATOR.*EMI|OFFUS.*CREDIT|SMART.*EMI|EMI.*CONVERSION|LOAN.*CREDIT/i.test(s);
+    };
+
+    // Helper to test if a row is an EMI processing fee or installment row
+    const isEmiChild = (t: any) => {
+      const s = cleanStr(`${t.description ?? ""} ${t.merchant ?? ""} ${t.note ?? ""}`);
+      return /OFFUS.*EMI|MER.*EMI|SMART.*EMI|EMI.*PRIN|EMI.*INT|PROCNG.*FEE|INSTALMENT|INSTALLMENT/i.test(s);
+    };
+
+    // Link parent debit purchase with child EMI transactions (disbursement, fee, installments)
+    const emiGroups = new Map<number, number[]>(); // parentIdx -> childIndices[]
+    for (let i = 0; i < rawTxns.length; i++) {
+      if (isEmiCredit(rawTxns[i])) {
+        const creditAmt = rawTxns[i].amount;
+        let parentIdx = -1;
+        let bestDiff = Infinity;
+
+        // Search across all transactions in the batch for the matching purchase debit
+        for (let j = 0; j < rawTxns.length; j++) {
+          if (j === i) continue;
+          if (isEmiChild(rawTxns[j]) || isEmiCredit(rawTxns[j])) continue;
+          const candidateStr = cleanStr(`${rawTxns[j].description ?? ""} ${rawTxns[j].merchant ?? ""}`);
+          const isParentType = rawTxns[j].type === "expense" || candidateStr.includes("MOTHERCARE");
+          if (isParentType) {
+            const diff = Math.abs(rawTxns[j].amount - creditAmt);
+            if (diff < 500 && diff < bestDiff) {
+              bestDiff = diff;
+              parentIdx = j;
+            }
+          }
+        }
+
+        if (parentIdx >= 0) {
+          if (!emiGroups.has(parentIdx)) emiGroups.set(parentIdx, []);
+          emiGroups.get(parentIdx)!.push(i);
+
+          // Tag any processing fee or installment rows in the batch
+          for (let k = 0; k < rawTxns.length; k++) {
+            if (k !== parentIdx && k !== i && isEmiChild(rawTxns[k])) {
+              emiGroups.get(parentIdx)!.push(k);
+            }
+          }
+        }
+      }
+    }
+
     try {
-      for (let i = 0; i < rows.length; i += CHUNK) {
-        const slice = rows.slice(i, i + CHUNK);
+      // 1. Separate parents and standalone transactions from children that require split_parent_id
+      const childIndices = new Set<number>();
+      emiGroups.forEach((children) => children.forEach((c) => childIndices.add(c)));
+
+      const parentTxns: any[] = [];
+      const parentIndexMap = new Map<number, number>(); // originalIndex -> parentTxnsIndex
+
+      rawTxns.forEach((t, idx) => {
+        if (!childIndices.has(idx)) {
+          parentIndexMap.set(idx, parentTxns.length);
+          const isEmiParent = emiGroups.has(idx);
+          parentTxns.push({
+            ...t,
+            account_id: data.accountId,
+            household_id: householdId,
+            created_by: context.userId,
+            tags: isEmiParent ? ["EMI"] : [],
+            import_batch_id: batchId,
+            split_parent_id: t.split_parent_id ?? null,
+          });
+        }
+      });
+
+      // Insert parent/standalone transactions first and get inserted IDs
+      const insertedParentsMap = new Map<number, string>(); // originalIndex -> insertedId
+      const CHUNK = 500;
+      for (let i = 0; i < parentTxns.length; i += CHUNK) {
+        const slice = parentTxns.slice(i, i + CHUNK);
+        const { data: inserted, error } = await context.supabase
+          .from("transactions")
+          .insert(slice)
+          .select("id");
+        if (error) throw error;
+        (inserted ?? []).forEach((row: any, sliceIdx: number) => {
+          const origIdx = Array.from(parentIndexMap.entries()).find(
+            ([_, pIdx]) => pIdx === i + sliceIdx,
+          )?.[0];
+          if (origIdx != null) insertedParentsMap.set(origIdx, row.id);
+        });
+      }
+
+      // 2. Insert child transactions with split_parent_id pointing to inserted parent ID
+      const childTxns: any[] = [];
+      emiGroups.forEach((childrenIndices, parentOrigIdx) => {
+        const parentDbId = insertedParentsMap.get(parentOrigIdx);
+        if (parentDbId) {
+          childrenIndices.forEach((cIdx) => {
+            const t = rawTxns[cIdx];
+            childTxns.push({
+              ...t,
+              account_id: data.accountId,
+              household_id: householdId,
+              created_by: context.userId,
+              tags: ["EMI"],
+              import_batch_id: batchId,
+              split_parent_id: parentDbId,
+            });
+          });
+        }
+      });
+
+      for (let i = 0; i < childTxns.length; i += CHUNK) {
+        const slice = childTxns.slice(i, i + CHUNK);
         const { error } = await context.supabase.from("transactions").insert(slice);
         if (error) throw error;
       }
     } catch (e: any) {
-      // All-or-nothing: never leave a half-imported statement behind.
+      // All-or-nothing: roll back
       await context.supabase.from("transactions").delete().eq("import_batch_id", batchId);
       throw new Error(
         `Import failed and was rolled back — no transactions were saved. ${e?.message ?? ""}`.trim(),
@@ -769,7 +889,7 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
         .update({
           status: "complete",
           imported_at: new Date().toISOString(),
-          inserted_count: rows.length,
+          inserted_count: data.transactions.length,
           error: null,
         })
         .eq("id", claimedUploadId);
@@ -804,6 +924,6 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
         .update({ current_balance: balance })
         .eq("id", data.accountId);
     }
-    return { ok: true, inserted: rows.length, alreadyImported: false, batchId };
+    return { ok: true, inserted: data.transactions.length, alreadyImported: false, batchId };
   });
 

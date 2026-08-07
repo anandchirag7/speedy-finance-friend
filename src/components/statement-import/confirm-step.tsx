@@ -144,7 +144,7 @@ function ClusterCard({
   const ignored = cluster.status === "ignored";
 
   const otherClusters = useMemo(
-    () => clusters.filter((c) => c.id !== cluster.id).sort((a, b) => a.name.localeCompare(b.name)),
+    () => clusters.filter((c) => c.id !== cluster.id),
     [clusters, cluster.id],
   );
 

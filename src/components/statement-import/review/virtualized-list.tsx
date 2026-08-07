@@ -15,8 +15,6 @@ export const VirtualizedTransactionList = memo(function VirtualizedTransactionLi
   categories,
   payees,
   callbacks,
-  loadedCount,
-  onLoadMore,
 }: {
   ids: string[];
   byId: Record<string, ReviewRow>;
@@ -24,42 +22,25 @@ export const VirtualizedTransactionList = memo(function VirtualizedTransactionLi
   categories: Category[];
   payees: string[];
   callbacks: RowCallbacks;
-  loadedCount: number;
-  onLoadMore: () => void;
+  loadedCount?: number;
+  onLoadMore?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: ids.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 10,
+    overscan: 8,
   });
 
   const items = virtualizer.getVirtualItems();
-  const last = items.length ? items[items.length - 1]!.index : 0;
-
-  // Prefetch the next cursor page well before the viewport reaches the end of
-  // the materialized window, so scrolling never stalls on a skeleton page.
-  const PREFETCH_AHEAD = 150;
-  useEffect(() => {
-    if (loadedCount >= ids.length) return;
-    if (last < loadedCount - PREFETCH_AHEAD) return;
-    const idle: typeof requestAnimationFrame =
-      (globalThis as any).requestIdleCallback ?? requestAnimationFrame;
-    const handle = idle(() => onLoadMore());
-    return () => {
-      const cancel = (globalThis as any).cancelIdleCallback ?? cancelAnimationFrame;
-      cancel(handle as any);
-    };
-  }, [last, loadedCount, ids.length, onLoadMore]);
-
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto overscroll-contain">
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {items.map((v) => {
           const id = ids[v.index]!;
-          const row = v.index < loadedCount ? byId[id] : undefined;
+          const row = byId[id];
           return (
             <div
               key={id}
@@ -70,6 +51,7 @@ export const VirtualizedTransactionList = memo(function VirtualizedTransactionLi
                 width: "100%",
                 height: ROW_HEIGHT,
                 transform: `translateY(${v.start}px)`,
+                willChange: "transform",
               }}
             >
               {row ? (

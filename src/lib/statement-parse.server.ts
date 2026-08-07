@@ -62,7 +62,20 @@ const DESC_KEYS = ["description", "narration", "particulars", "details", "transa
 const DEBIT_KEYS = ["debit", "withdrawal", "withdrawal amount", "debit amount", "dr", "amount debit", "money out", "paid out", "spent"];
 const CREDIT_KEYS = ["credit", "deposit", "deposit amount", "credit amount", "cr", "amount credit", "money in", "paid in", "received"];
 const AMOUNT_KEYS = ["amount", "transaction amount", "amt", "value"];
-const TYPE_KEYS = ["type", "dr/cr", "cr/dr", "drcr", "transaction type"];
+const TYPE_KEYS = [
+  "type",
+  "dr/cr",
+  "cr/dr",
+  "drcr",
+  "transaction type",
+  "debit / credit",
+  "debit/credit",
+  "dr / cr",
+  "cr / dr",
+  "debit or credit",
+  "dr or cr",
+  "cr or dr",
+];
 
 function norm(s: any): string {
   return String(s ?? "").trim().toLowerCase().replace(/[_\-\s]+/g, " ");
@@ -137,7 +150,6 @@ function findKey(headers: string[], candidates: string[]): string | null {
   return null;
 }
 
-
 /** Detect the header row in a sheet: pick the row that maximises known-column matches. */
 function detectHeader(rows: any[][]): { headerIdx: number; headers: string[] } | null {
   let best = { idx: -1, score: 0, headers: [] as string[] };
@@ -194,12 +206,34 @@ export function extractRowsFromAOA(aoa: any[][]): ExtractedTxn[] {
       const n = parseNumber(row[ai]);
       if (n != null && n !== 0) {
         amount = Math.abs(n);
+        let foundType = false;
         if (ti >= 0) {
           const tv = norm(row[ti]);
-          if (tv.startsWith("cr") || tv.includes("credit") || tv.includes("income")) type = "income";
-          else type = "expense";
-        } else {
-          type = n < 0 ? "expense" : "income";
+          if (tv.startsWith("cr") || tv.includes("credit") || tv.includes("income")) {
+            type = "income";
+            foundType = true;
+          } else if (tv.startsWith("dr") || tv.includes("debit") || tv.includes("expense")) {
+            type = "expense";
+            foundType = true;
+          }
+        }
+        if (!foundType) {
+          // Check explicit Cr tag in type column, last cell, or row text
+          const lastCell = String(row[row.length - 1] ?? "").trim().toLowerCase();
+          const rowStr = row.map((c) => String(c ?? "").trim()).join(" ");
+
+          const isExplicitCr =
+            lastCell === "cr" ||
+            lastCell === "credit" ||
+            /\bcr\b/i.test(rowStr) ||
+            /cr$/i.test(rowStr.trim()) ||
+            /\bcredit\b/i.test(rowStr);
+
+          if (isExplicitCr) {
+            type = "income";
+          } else {
+            type = "expense";
+          }
         }
       }
     }

@@ -31,10 +31,13 @@ export const CategoryCombobox = memo(function CategoryCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
-  const label = useMemo(
-    () => categories.find((c) => c.id === value)?.name ?? "Uncategorized",
-    [categories, value],
-  );
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories) map.set(c.id, c.name);
+    return map;
+  }, [categories]);
+
+  const label = value ? categoryMap.get(value) ?? "Uncategorized" : "Uncategorized";
 
   const options = useMemo(() => {
     if (!open) return [];
@@ -43,31 +46,38 @@ export const CategoryCombobox = memo(function CategoryCombobox({
     return list.slice(0, MAX_OPTIONS);
   }, [open, query, categories]);
 
+  const triggerBtn = (
+    <button
+      type="button"
+      aria-label="Category"
+      onClick={() => !open && setOpen(true)}
+      className={cn(
+        "flex h-7 w-full items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs transition-colors hover:bg-accent/50",
+        !value && "text-muted-foreground",
+      )}
+    >
+      <span className="truncate">{label}</span>
+      <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
+    </button>
+  );
+
+  if (!open) return triggerBtn;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Category"
-          className={cn(
-            "flex h-7 w-full items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs",
-            !value && "text-muted-foreground",
-          )}
-        >
-          <span className="truncate">{label}</span>
-          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
-        </button>
+        {triggerBtn}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-56 p-0">
-        {open && (
-          <Command shouldFilter={false}>
-            <CommandInput
-              value={query}
-              onValueChange={setQuery}
-              placeholder="Search categories"
-              className="h-8 text-xs"
-            />
-            <CommandList className="max-h-56">
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search categories"
+            className="h-8 text-xs"
+            autoFocus
+          />
+          <CommandList className="max-h-56">
               <CommandEmpty className="py-3 text-center text-xs">No category</CommandEmpty>
               <CommandGroup>
                 <CommandItem
@@ -100,8 +110,7 @@ export const CategoryCombobox = memo(function CategoryCombobox({
               </CommandGroup>
             </CommandList>
           </Command>
-        )}
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
   );
 });

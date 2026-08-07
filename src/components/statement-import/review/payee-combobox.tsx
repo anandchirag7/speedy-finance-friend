@@ -38,6 +38,29 @@ export const PayeeCombobox = memo(function PayeeCombobox({
 
   const typed = query.trim();
 
+  const triggerBtn = (
+    <button
+      type="button"
+      aria-label="Payee"
+      onClick={() => {
+        if (!open) {
+          setOpen(true);
+          setQuery("");
+          setLimit(PAGE);
+        }
+      }}
+      className={cn(
+        "flex h-7 w-full items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs transition-colors hover:bg-accent/50",
+        !value && "text-muted-foreground",
+      )}
+    >
+      <span className="truncate">{value || "Set payee"}</span>
+      <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
+    </button>
+  );
+
+  if (!open) return triggerBtn;
+
   return (
     <Popover
       open={open}
@@ -50,31 +73,21 @@ export const PayeeCombobox = memo(function PayeeCombobox({
       }}
     >
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Payee"
-          className={cn(
-            "flex h-7 w-full items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs",
-            !value && "text-muted-foreground",
-          )}
-        >
-          <span className="truncate">{value || "Set payee"}</span>
-          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
-        </button>
+        {triggerBtn}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-0">
-        {open && (
-          <Command shouldFilter={false}>
-            <CommandInput
-              value={query}
-              onValueChange={(v) => {
-                setQuery(v);
-                setLimit(PAGE);
-              }}
-              placeholder="Search or type a payee"
-              className="h-8 text-xs"
-            />
-            <CommandList
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={query}
+            onValueChange={(v) => {
+              setQuery(v);
+              setLimit(PAGE);
+            }}
+            placeholder="Search or type a payee"
+            className="h-8 text-xs"
+            autoFocus
+          />
+          <CommandList
               className="max-h-56"
               onScroll={(e) => {
                 const el = e.currentTarget;
@@ -114,8 +127,7 @@ export const PayeeCombobox = memo(function PayeeCombobox({
               </CommandGroup>
             </CommandList>
           </Command>
-        )}
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
   );
 });

@@ -914,7 +914,7 @@ export function StatementImportDialog() {
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {step === "import" && (
             <ImportStep
               accounts={accounts as Array<{ id: string; name: string }>}
