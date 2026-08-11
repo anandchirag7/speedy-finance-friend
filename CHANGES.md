@@ -52,4 +52,7 @@ This file tracks all modified and newly created files along with their date of c
 
 ## 2026-08-11
 - `.env`
+- `src/components/statement-import/confirm-step.tsx`
+- `src/lib/statement-clusters.ts`
+- `src/components/statement-import-dialog.tsx`
 - `CHANGES.md`
