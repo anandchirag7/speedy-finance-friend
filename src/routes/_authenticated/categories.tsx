@@ -517,6 +517,8 @@ function CategoriesPage() {
           <Plus className="h-6 w-6" />
         </Button>
 
+        <ImportCategoriesDialog open={importOpen} onOpenChange={setImportOpen} />
+
         <EditDialog
           value={editing}
           onClose={() => setEditing(null)}
