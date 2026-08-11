@@ -320,20 +320,29 @@ function CategoriesPage() {
                   Organize how money moves — group transactions, map to tax codes, and keep your books tidy.
                 </p>
               </div>
-              <Button
-                onClick={() =>
-                  setEditing({
-                    name: "",
-                    kind: scope.includes("income") ? "income" : "expense",
-                    scope: scope.startsWith("biz") ? "business" : "personal",
-                    is_hidden: false,
-                    sort_order: 0,
-                  })
-                }
-                className="hidden md:inline-flex"
-              >
-                <Plus className="mr-1.5 h-4 w-4" /> Add Category
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setImportOpen(true)}
+                  className="hidden md:inline-flex"
+                >
+                  <UploadCloud className="mr-1.5 h-4 w-4" /> Import CSV
+                </Button>
+                <Button
+                  onClick={() =>
+                    setEditing({
+                      name: "",
+                      kind: scope.includes("income") ? "income" : "expense",
+                      scope: scope.startsWith("biz") ? "business" : "personal",
+                      is_hidden: false,
+                      sort_order: 0,
+                    })
+                  }
+                  className="hidden md:inline-flex"
+                >
+                  <Plus className="mr-1.5 h-4 w-4" /> Add Category
+                </Button>
+              </div>
             </div>
 
             {/* Toolbar */}
