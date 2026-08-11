@@ -22,7 +22,9 @@ import {
   Receipt,
   FolderTree,
   Info,
+  UploadCloud,
 } from "lucide-react";
+import { ImportCategoriesDialog } from "@/components/categories/import-csv-dialog";
 import { toast } from "sonner";
 import {
   listCategoriesWithUsage,
