@@ -209,22 +209,32 @@ function CategoriesPage() {
     });
   }, [all, scope, q, showHidden, kindFilter]);
 
-  // Build parent/child tree from filtered set (include a parent if any child matches)
+  // Build parent/child tree from filtered set (include the full ancestor chain
+  // of any match so sub-sub-…-categories never disappear)
   const tree = useMemo(() => {
     const byId = new Map<string, Cat>();
     for (const c of all) byId.set(c.id, c);
     const includeIds = new Set<string>(filtered.map((c) => c.id));
-    for (const c of filtered) if (c.parent_id && byId.has(c.parent_id)) includeIds.add(c.parent_id);
+    for (const c of filtered) {
+      let p = c.parent_id;
+      const guard = new Set<string>();
+      while (p && byId.has(p) && !guard.has(p)) {
+        guard.add(p);
+        includeIds.add(p);
+        p = byId.get(p)!.parent_id;
+      }
+    }
     const nodes = all.filter((c) => includeIds.has(c.id));
-    const roots = nodes.filter((c) => !c.parent_id || !byId.has(c.parent_id));
+    const roots = nodes.filter((c) => !c.parent_id || !includeIds.has(c.parent_id));
     const kids = new Map<string, Cat[]>();
     for (const c of nodes) {
-      if (c.parent_id && byId.has(c.parent_id)) {
+      if (c.parent_id && includeIds.has(c.parent_id)) {
         const arr = kids.get(c.parent_id) ?? [];
         arr.push(c);
         kids.set(c.parent_id, arr);
       }
     }
+
     const cmp = (a: Cat, b: Cat) => {
       const dir = sortDir === "asc" ? 1 : -1;
       const av = (a as any)[sortKey] ?? "";
