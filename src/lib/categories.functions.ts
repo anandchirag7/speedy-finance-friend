@@ -192,3 +192,118 @@ export const seedDefaultCategories = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+const csvRowSchema = z.object({
+  name: z.string().min(1).max(100),
+  kind: z.enum(["income", "expense", "transfer", "investment"]).default("expense"),
+  scope: z.enum(["personal", "business"]).default("personal"),
+  parent_name: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  group_label: z.string().nullable().optional(),
+  tax_code: z.string().nullable().optional(),
+});
+
+export const bulkImportCategoriesFromCSV = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ rows: z.array(csvRowSchema) }).parse(data))
+  .handler(async ({ context, data }) => {
+    const householdId = await getHouseholdId(context);
+
+    // Fetch existing categories to resolve parent IDs and avoid duplicates
+    const { data: existing } = await context.supabase
+      .from("categories")
+      .select("id, name, kind, household_id")
+      .eq("household_id", householdId);
+
+    const catMap = new Map<string, string>();
+    for (const c of existing ?? []) {
+      catMap.set(c.name.toLowerCase().trim(), c.id);
+    }
+
+    // Step 1: Insert parent rows (where parent_name is empty)
+    const parentsToInsert = data.rows.filter((r) => !r.parent_name || !r.parent_name.trim());
+    let insertedCount = 0;
+
+    for (const row of parentsToInsert) {
+      const key = row.name.toLowerCase().trim();
+      const existingId = catMap.get(key);
+      if (existingId) {
+        // Update existing parent if needed
+        await context.supabase
+          .from("categories")
+          .update({
+            kind: row.kind,
+            scope: row.scope,
+            description: row.description ?? undefined,
+          })
+          .eq("id", existingId);
+      } else {
+        const { data: saved } = await context.supabase
+          .from("categories")
+          .insert({
+            household_id: householdId,
+            name: row.name.trim(),
+            kind: row.kind,
+            scope: row.scope,
+            description: row.description ?? null,
+            color: row.color ?? null,
+            icon: row.icon ?? null,
+            group_label: row.group_label ?? null,
+            tax_code: row.tax_code ?? null,
+          })
+          .select("id, name")
+          .single();
+        if (saved?.id) {
+          catMap.set(saved.name.toLowerCase().trim(), saved.id);
+          insertedCount++;
+        }
+      }
+    }
+
+    // Step 2: Insert subcategories (where parent_name is provided)
+    const subsToInsert = data.rows.filter((r) => r.parent_name && r.parent_name.trim());
+
+    for (const row of subsToInsert) {
+      const parentKey = row.parent_name!.toLowerCase().trim();
+      const parentId = catMap.get(parentKey) ?? null;
+      const key = row.name.toLowerCase().trim();
+      const existingId = catMap.get(key);
+
+      if (existingId) {
+        await context.supabase
+          .from("categories")
+          .update({
+            parent_id: parentId,
+            kind: row.kind,
+            scope: row.scope,
+            description: row.description ?? undefined,
+          })
+          .eq("id", existingId);
+      } else {
+        const { data: saved } = await context.supabase
+          .from("categories")
+          .insert({
+            household_id: householdId,
+            parent_id: parentId,
+            name: row.name.trim(),
+            kind: row.kind,
+            scope: row.scope,
+            description: row.description ?? null,
+            color: row.color ?? null,
+            icon: row.icon ?? null,
+            group_label: row.group_label ?? null,
+            tax_code: row.tax_code ?? null,
+          })
+          .select("id, name")
+          .single();
+        if (saved?.id) {
+          catMap.set(saved.name.toLowerCase().trim(), saved.id);
+          insertedCount++;
+        }
+      }
+    }
+
+    return { importedCount: insertedCount, totalProcessed: data.rows.length };
+  });

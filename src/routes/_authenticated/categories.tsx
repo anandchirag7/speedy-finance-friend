@@ -23,6 +23,10 @@ import {
   FolderTree,
   Info,
   RefreshCw,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -174,6 +178,7 @@ function CategoriesPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<Partial<Cat> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Cat | null>(null);
+  const [csvOpen, setCsvOpen] = useState(false);
 
   const all = (cats ?? []) as Cat[];
 
@@ -340,6 +345,13 @@ function CategoriesPage() {
                   className="hidden md:inline-flex"
                 >
                   <RefreshCw className="mr-1.5 h-4 w-4" /> Reset / Seed Defaults
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setCsvOpen(true)}
+                  className="hidden md:inline-flex gap-1.5"
+                >
+                  <Upload className="h-4 w-4" /> Upload CSV
                 </Button>
                 <Button
                   onClick={() =>
@@ -1474,7 +1486,233 @@ function EditDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CategoryCsvUploadModal
+        open={csvOpen}
+        onOpenChange={setCsvOpen}
+        onImportSuccess={() => {
+          qc.invalidateQueries({ queryKey: ["categories-full"] });
+          qc.invalidateQueries({ queryKey: ["categories"] });
+        }}
+      />
     </>
+  );
+}
+
+function CategoryCsvUploadModal({
+  open,
+  onOpenChange,
+  onImportSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImportSuccess: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<
+    Array<{
+      name: string;
+      kind: "income" | "expense" | "transfer" | "investment";
+      scope: "personal" | "business";
+      parent_name?: string | null;
+      description?: string | null;
+    }>
+  >([]);
+  const [loading, setLoading] = useState(false);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    const text = await f.text();
+
+    const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    if (lines.length < 2) {
+      toast.error("CSV file is empty or missing header row");
+      return;
+    }
+
+    const parseCsvLine = (line: string) => {
+      const result: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result.map((s) => s.replace(/^"|"$/g, "").trim());
+    };
+
+    const headers = parseCsvLine(lines[0]!).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const nameIdx = headers.findIndex((h) => h.includes("name") || h.includes("category"));
+    const kindIdx = headers.findIndex((h) => h.includes("kind") || h.includes("type"));
+    const parentIdx = headers.findIndex((h) => h.includes("parent"));
+    const scopeIdx = headers.findIndex((h) => h.includes("scope"));
+    const descIdx = headers.findIndex((h) => h.includes("desc"));
+
+    if (nameIdx === -1) {
+      toast.error("CSV must contain a 'Name' or 'Category' column");
+      return;
+    }
+
+    const rows: typeof parsedRows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]!);
+      const name = cols[nameIdx];
+      if (!name) continue;
+
+      const rawKind = (kindIdx !== -1 ? cols[kindIdx] : "expense")?.toLowerCase() ?? "expense";
+      let kind: "income" | "expense" | "transfer" | "investment" = "expense";
+      if (rawKind.includes("inc")) kind = "income";
+      else if (rawKind.includes("trans")) kind = "transfer";
+      else if (rawKind.includes("invest")) kind = "investment";
+
+      const rawScope = (scopeIdx !== -1 ? cols[scopeIdx] : "personal")?.toLowerCase() ?? "personal";
+      const scope: "personal" | "business" =
+        rawScope.includes("biz") || rawScope.includes("bus") ? "business" : "personal";
+
+      rows.push({
+        name,
+        kind,
+        scope,
+        parent_name: parentIdx !== -1 ? cols[parentIdx] || null : null,
+        description: descIdx !== -1 ? cols[descIdx] || null : null,
+      });
+    }
+
+    setParsedRows(rows);
+  };
+
+  const handleDownloadTemplate = () => {
+    const template = `Name,Kind,Parent Name,Scope,Description
+Food & Dining,expense,,personal,Dining out and food delivery
+Groceries,expense,Food & Dining,personal,Supermarket groceries
+Salary,income,,personal,Monthly payroll salary
+SIP Investments,investment,,personal,Mutual fund investments
+Mobile & Internet,expense,,personal,Utility bills`;
+
+    const blob = new Blob([template], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "categories_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async () => {
+    if (!parsedRows.length) return;
+    setLoading(true);
+    try {
+      const { bulkImportCategoriesFromCSV } = await import("@/lib/categories.functions");
+      const res = await bulkImportCategoriesFromCSV({ data: { rows: parsedRows as any } });
+      toast.success(`Successfully imported ${res.importedCount} categories!`);
+      onImportSuccess();
+      onOpenChange(false);
+      setFile(null);
+      setParsedRows([]);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to import categories from CSV");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" />
+            Upload Categories via CSV
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 text-xs">
+          <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
+            <div>
+              <p className="font-semibold text-foreground">CSV Template</p>
+              <p className="text-muted-foreground text-[11px]">
+                Download sample CSV with pre-defined headers (Name, Kind, Parent Name, Scope, Description).
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={handleDownloadTemplate} className="h-8 gap-1.5 text-xs shrink-0">
+              <Download className="h-3.5 w-3.5" /> Template
+            </Button>
+          </div>
+
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center hover:bg-muted/10 transition-colors">
+            <FileSpreadsheet className="h-8 w-8 text-muted-foreground/60 mb-2" />
+            <p className="font-medium text-xs">
+              {file ? file.name : "Choose a .csv file or drag & drop"}
+            </p>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              {file ? `${parsedRows.length} valid category rows parsed` : "Supports parent & sub-category hierarchies"}
+            </p>
+            <label className="cursor-pointer">
+              <span className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors inline-block">
+                Select CSV File
+              </span>
+              <input type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
+            </label>
+          </div>
+
+          {parsedRows.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-foreground">Preview ({parsedRows.length} rows)</span>
+                <span className="text-[11px] text-emerald-600 font-medium">Ready to import</span>
+              </div>
+              <div className="max-h-48 overflow-auto rounded-lg border bg-card p-1">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-muted/50 text-muted-foreground">
+                    <tr>
+                      <th className="p-1.5">Category Name</th>
+                      <th className="p-1.5">Kind</th>
+                      <th className="p-1.5">Parent</th>
+                      <th className="p-1.5">Scope</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {parsedRows.slice(0, 15).map((r, i) => (
+                      <tr key={i} className="hover:bg-muted/20">
+                        <td className="p-1.5 font-medium">{r.name}</td>
+                        <td className="p-1.5 capitalize">{r.kind}</td>
+                        <td className="p-1.5 text-muted-foreground">{r.parent_name || "—"}</td>
+                        <td className="p-1.5 capitalize">{r.scope}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {parsedRows.length > 15 && (
+                  <p className="p-1.5 text-center text-[10px] text-muted-foreground">
+                    + {parsedRows.length - 15} more rows
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleImport} disabled={!parsedRows.length || loading} className="gap-1.5">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Import {parsedRows.length} Categories
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

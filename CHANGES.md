@@ -55,4 +55,6 @@ This file tracks all modified and newly created files along with their date of c
 - `src/components/statement-import/confirm-step.tsx`
 - `src/lib/statement-clusters.ts`
 - `src/components/statement-import-dialog.tsx`
+- `src/lib/categories.functions.ts`
+- `src/routes/_authenticated/categories.tsx`
 - `CHANGES.md`
