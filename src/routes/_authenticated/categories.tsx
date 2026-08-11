@@ -182,7 +182,6 @@ function CategoriesPage() {
   const [editing, setEditing] = useState<Partial<Cat> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Cat | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
-  const [seeding, setSeeding] = useState(false);
 
   const all = (cats ?? []) as Cat[];
 
@@ -330,13 +329,12 @@ function CategoriesPage() {
                   Organize how money moves — group transactions, map to tax codes, and keep your books tidy.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
-                  disabled={seeding}
+                  size="sm"
                   onClick={async () => {
                     if (window.confirm("Re-insert default categories (Food, Transport, Housing, Salary, etc.)?")) {
-                      setSeeding(true);
                       try {
                         await seedFn();
                         toast.success("Default categories re-inserted!");
@@ -344,28 +342,23 @@ function CategoriesPage() {
                         qc.invalidateQueries({ queryKey: ["categories"] });
                       } catch (e: any) {
                         toast.error(e?.message ?? "Failed to seed default categories");
-                      } finally {
-                        setSeeding(false);
                       }
                     }
                   }}
-                  className="hidden md:inline-flex"
+                  className="gap-1.5"
                 >
-                  {seeding ? (
-                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-1.5 h-4 w-4" />
-                  )}
-                  Reset / Seed Defaults
+                  <RefreshCw className="h-4 w-4" /> Reset / Seed Defaults
                 </Button>
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={() => setCsvOpen(true)}
-                  className="hidden md:inline-flex gap-1.5"
+                  className="gap-1.5"
                 >
                   <Upload className="h-4 w-4" /> Upload CSV
                 </Button>
                 <Button
+                  size="sm"
                   onClick={() =>
                     setEditing({
                       name: "",
@@ -375,9 +368,9 @@ function CategoriesPage() {
                       sort_order: 0,
                     })
                   }
-                  className="hidden md:inline-flex"
+                  className="gap-1.5"
                 >
-                  <Plus className="mr-1.5 h-4 w-4" /> Add Category
+                  <Plus className="h-4 w-4" /> Add Category
                 </Button>
               </div>
             </div>
