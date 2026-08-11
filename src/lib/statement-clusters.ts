@@ -297,7 +297,15 @@ export function buildClusters(opts: {
     ...groupPatterns(unresolvedPatterns),
   ];
 
-  const payeeByName = new Map(existingPayees.map((p) => [p.merchant.toLowerCase(), p]));
+  const payeeByName = new Map<string, (typeof existingPayees)[number]>();
+  for (const p of existingPayees) {
+    if (p.merchant) payeeByName.set(p.merchant.toLowerCase(), p);
+    if ((p as any).aliases && Array.isArray((p as any).aliases)) {
+      for (const alias of (p as any).aliases) {
+        if (alias) payeeByName.set(alias.toLowerCase(), p);
+      }
+    }
+  }
 
   return groups.map((group, gi) => {
     const members = group.flatMap((p) => Array.from(byPattern.get(p)?.values() ?? []));
@@ -316,8 +324,16 @@ export function buildClusters(opts: {
 
     const hit = group.map((p) => resolved[p]).find(Boolean);
     const rep = group.reduce((a, b) => (a.length <= b.length ? a : b));
-    const name = hit?.payee ?? titleCase(rep);
-    const existing = payeeByName.get(name.toLowerCase()) ?? null;
+    let existing = group.map((p) => payeeByName.get(p.toLowerCase())).find(Boolean) ?? null;
+    if (!existing) {
+      for (const m of members) {
+        const found = payeeByName.get(m.description.toLowerCase());
+        if (found) {
+          existing = found;
+          break;
+        }
+      }
+    const name = hit?.payee ?? existing?.merchant ?? titleCase(rep);
 
     let source: MatchSource = hit ? sourceOf(hit.source) : group.length > 1 ? "cluster" : "pending";
     if (!hit && existing) source = "payee";

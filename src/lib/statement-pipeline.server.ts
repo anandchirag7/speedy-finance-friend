@@ -245,7 +245,7 @@ export async function runStatementUpload(opts: {
         .eq("household_id", householdId),
       supabase
         .from("memorized_payees")
-        .select("id, merchant, category_id")
+        .select("id, merchant, category_id, aliases")
         .eq("household_id", householdId),
     ]);
 

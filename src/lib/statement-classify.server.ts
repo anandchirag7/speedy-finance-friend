@@ -42,15 +42,19 @@ export async function resolveFromLookups(
   const allKeys = Array.from(keySet);
 
   const overrideMap = new Map<string, { payee: string | null; category: string | null }>();
+  const memorizedMap = new Map<string, { payee: string; category: string | null }>();
   const dictMap = new Map<string, { payee: string; category: string | null }>();
 
   for (const part of chunk(allKeys, 400)) {
-    const [{ data: overrides }, { data: dict }] = await Promise.all([
+    const [{ data: overrides }, { data: memorized }, { data: dict }] = await Promise.all([
       supabase
         .from("user_payee_overrides")
         .select("normalized_pattern, payee_name, category")
         .eq("user_id", userId)
         .in("normalized_pattern", part),
+      supabase
+        .from("memorized_payees")
+        .select("merchant, name, aliases, category_id"),
       supabase
         .from("global_merchant_dictionary")
         .select("normalized_pattern, canonical_payee_name, suggested_category")
@@ -58,6 +62,17 @@ export async function resolveFromLookups(
     ]);
     for (const o of overrides ?? []) {
       overrideMap.set(o.normalized_pattern, { payee: o.payee_name, category: o.category });
+    }
+    for (const m of memorized ?? []) {
+      const payeeName = m.merchant || m.name;
+      if (payeeName) {
+        if (m.aliases && Array.isArray(m.aliases)) {
+          for (const alias of m.aliases) {
+            if (alias) memorizedMap.set(alias.trim().toUpperCase(), { payee: payeeName, category: m.category_id });
+          }
+        }
+        if (m.merchant) memorizedMap.set(m.merchant.trim().toUpperCase(), { payee: payeeName, category: m.category_id });
+      }
     }
     for (const d of dict ?? []) {
       dictMap.set(d.normalized_pattern, {
@@ -76,6 +91,11 @@ export async function resolveFromLookups(
       const o = overrideMap.get(k);
       if (o?.payee) {
         hit = { payee: o.payee, category: o.category ?? null, source: "user" };
+        break;
+      }
+      const m = memorizedMap.get(k.toUpperCase());
+      if (m?.payee) {
+        hit = { payee: m.payee, category: m.category ?? null, source: "user" };
         break;
       }
     }
