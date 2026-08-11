@@ -156,41 +156,69 @@ export const seedDefaultCategories = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const householdId = await getHouseholdId(context);
 
-    // Try RPC first
-    const { error: rpcError } = await context.supabase.rpc("seed_default_categories", {
-      _household_id: householdId,
-    });
+    // 1. Fetch existing categories for this household to prevent duplicates
+    const { data: existing } = await context.supabase
+      .from("categories")
+      .select("id, name")
+      .eq("household_id", householdId);
 
-    if (!rpcError) return { ok: true };
+    const existingNames = new Set((existing ?? []).map((c) => c.name.toLowerCase().trim()));
 
-    // Fallback: Direct table insertion
+    // 2. Filter parent categories to insert
+    const parentsToInsert = DEFAULT_CATEGORIES.filter(
+      (item) => !existingNames.has(item.name.toLowerCase().trim()),
+    ).map((item) => ({
+      household_id: householdId,
+      name: item.name,
+      kind: item.kind,
+      is_system: true,
+    }));
+
+    if (parentsToInsert.length > 0) {
+      const { error: pErr } = await context.supabase.from("categories").insert(parentsToInsert);
+      if (pErr) console.warn("Parent insert error:", pErr);
+    }
+
+    // 3. Re-fetch all categories for household to get parent IDs
+    const { data: allCats } = await context.supabase
+      .from("categories")
+      .select("id, name")
+      .eq("household_id", householdId);
+
+    const parentMap = new Map((allCats ?? []).map((p) => [p.name.toLowerCase().trim(), p.id]));
+
+    // 4. Batch insert subcategories
+    const subRows: Array<{
+      household_id: string;
+      parent_id: string;
+      name: string;
+      kind: string;
+      is_system: boolean;
+    }> = [];
+
     for (const item of DEFAULT_CATEGORIES) {
-      const { data: parent, error: pErr } = await context.supabase
-        .from("categories")
-        .insert({
-          household_id: householdId,
-          name: item.name,
-          kind: item.kind,
-          is_system: true,
-        })
-        .select("id")
-        .single();
-
-      if (pErr) continue;
-
-      if (item.subs.length > 0 && parent?.id) {
-        const subRows = item.subs.map((s) => ({
-          household_id: householdId,
-          parent_id: parent.id,
-          name: s,
-          kind: item.kind,
-          is_system: true,
-        }));
-        await context.supabase.from("categories").insert(subRows);
+      const parentId = parentMap.get(item.name.toLowerCase().trim());
+      if (parentId && item.subs.length > 0) {
+        for (const subName of item.subs) {
+          if (!existingNames.has(subName.toLowerCase().trim())) {
+            subRows.push({
+              household_id: householdId,
+              parent_id: parentId,
+              name: subName,
+              kind: item.kind,
+              is_system: true,
+            });
+          }
+        }
       }
     }
 
-    return { ok: true };
+    if (subRows.length > 0) {
+      const { error: sErr } = await context.supabase.from("categories").insert(subRows);
+      if (sErr) console.warn("Subcategory insert error:", sErr);
+    }
+
+    return { ok: true, insertedParents: parentsToInsert.length, insertedSubs: subRows.length };
   });
 
 const csvRowSchema = z.object({

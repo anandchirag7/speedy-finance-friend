@@ -36,6 +36,7 @@ import {
   deleteCategory,
   toggleCategoryHidden,
   duplicateCategory,
+  seedDefaultCategories,
 } from "@/lib/categories.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -163,6 +164,7 @@ function matchesScope(c: Cat, scope: ScopeKey) {
 
 function CategoriesPage() {
   const list = useServerFn(listCategoriesWithUsage);
+  const seedFn = useServerFn(seedDefaultCategories);
   const qc = useQueryClient();
   const { data: cats, isLoading } = useQuery({
     queryKey: ["categories-full"],
@@ -180,6 +182,7 @@ function CategoriesPage() {
   const [editing, setEditing] = useState<Partial<Cat> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Cat | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   const all = (cats ?? []) as Cat[];
 
@@ -330,22 +333,30 @@ function CategoriesPage() {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
+                  disabled={seeding}
                   onClick={async () => {
                     if (window.confirm("Re-insert default categories (Food, Transport, Housing, Salary, etc.)?")) {
+                      setSeeding(true);
                       try {
-                        const { seedDefaultCategories } = await import("@/lib/categories.functions");
-                        await seedDefaultCategories();
+                        await seedFn();
                         toast.success("Default categories re-inserted!");
                         qc.invalidateQueries({ queryKey: ["categories-full"] });
                         qc.invalidateQueries({ queryKey: ["categories"] });
                       } catch (e: any) {
                         toast.error(e?.message ?? "Failed to seed default categories");
+                      } finally {
+                        setSeeding(false);
                       }
                     }
                   }}
                   className="hidden md:inline-flex"
                 >
-                  <RefreshCw className="mr-1.5 h-4 w-4" /> Reset / Seed Defaults
+                  {seeding ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1.5 h-4 w-4" />
+                  )}
+                  Reset / Seed Defaults
                 </Button>
                 <Button
                   variant="outline"
