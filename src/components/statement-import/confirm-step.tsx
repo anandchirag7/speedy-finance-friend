@@ -26,6 +26,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -390,6 +397,7 @@ export function ConfirmStep({
   const [splitId, setSplitId] = useState<string | null>(null);
   const [splitPicked, setSplitPicked] = useState<string[]>([]);
   const [moveTargetId, setMoveTargetId] = useState<string>("");
+  const [showHighConfModal, setShowHighConfModal] = useState(false);
 
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -480,9 +488,9 @@ export function ConfirmStep({
           <Button
             size="sm"
             className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs px-3 shadow"
-            onClick={() => setClusters(approveHighConfidenceClusters(clusters))}
+            onClick={() => setShowHighConfModal(true)}
           >
-            ⚡ 1-Click Approve All {highConfUnapproved.length} High-Confidence
+            ⚡ Review & Approve {highConfUnapproved.length} High-Confidence
           </Button>
         </div>
       )}
@@ -857,6 +865,241 @@ export function ConfirmStep({
 
         </SheetContent>
       </Sheet>
+
+      <HighConfApprovalModal
+        open={showHighConfModal}
+        onOpenChange={setShowHighConfModal}
+        clustersToApprove={highConfUnapproved}
+        categories={categories}
+        onCategoryCreated={onCategoryCreated}
+        onConfirmApprove={(approvedItems) => {
+          const approvedMap = new Map(approvedItems.map((item) => [item.id, item.category_id]));
+          setClusters(
+            clusters.map((c) => {
+              if (approvedMap.has(c.id)) {
+                return {
+                  ...c,
+                  status: "approved" as ClusterStatus,
+                  category_id: approvedMap.get(c.id) ?? c.category_id,
+                };
+              }
+              return c;
+            }),
+          );
+        }}
+      />
     </div>
+  );
+}
+
+function HighConfApprovalModal({
+  open,
+  onOpenChange,
+  clustersToApprove,
+  categories,
+  onConfirmApprove,
+  onCategoryCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  clustersToApprove: Cluster[];
+  categories: CategoryItem[];
+  onConfirmApprove: (approvedClusters: Array<{ id: string; category_id: string | null }>) => void;
+  onCategoryCreated?: (c: CategoryItem) => void;
+}) {
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  const [clusterCategoryMap, setClusterCategoryMap] = useState<Record<string, string | null>>({});
+
+  // Auto-resolve fallback categories based on keyword rules if unassigned
+  const catMapByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories) {
+      map.set(c.name.toLowerCase().trim(), c.id);
+    }
+    return map;
+  }, [categories]);
+
+  const getAutoCategory = useCallback(
+    (c: Cluster): string | null => {
+      if (c.category_id) return c.category_id;
+      const text = `${c.name} ${c.patterns.join(" ")} ${c.members.map((m) => m.description).join(" ")}`.toLowerCase();
+
+      const rules: Array<[string[], string]> = [
+        [["swiggy", "zomato", "blinkit", "zepto", "instamart", "mcdonald", "dominos", "kfc", "starbucks", "bakery", "cafe", "restaurant", "dining", "food"], "Food & Dining"],
+        [["grocery", "supermarket", "mart", "more retail", "nature basket"], "Groceries"],
+        [["uber", "ola", "rapido", "namma", "petrol", "hpcl", "bpcl", "iocl", "fuel", "shell", "parking", "metro", "irctc", "redbus", "indigo", "akasa", "airindia", "flight", "toll", "fastag"], "Transport"],
+        [["amazon", "flipkart", "myntra", "ajio", "meesho", "decathlon", "zara", "h&m", "retail", "shopping"], "Shopping"],
+        [["airtel", "jio", "vi ", "vodafone", "bescom", "tseb", "msedcl", "electricity", "water", "gas", "broadband", "netflix", "spotify", "youtube", "prime", "hotstar", "apple", "google"], "Bills & Utilities"],
+        [["zerodha", "groww", "coin", "angelone", "upstox", "indmoney", "mutual fund", "sip", "ppf", "nps", "lic", "hdfc life", "icici pru", "sbi life"], "Investments"],
+        [["rent", "society", "maintenance"], "Housing"],
+        [["salary", "payroll"], "Salary & Income"],
+      ];
+
+      for (const [keywords, catName] of rules) {
+        if (keywords.some((k) => text.includes(k))) {
+          const matchId = catMapByName.get(catName.toLowerCase());
+          if (matchId) return matchId;
+        }
+      }
+      return null;
+    },
+    [catMapByName],
+  );
+
+  // Initialize/sync categories for clusters when modal opens
+  useEffect(() => {
+    if (open) {
+      const initial: Record<string, string | null> = {};
+      for (const c of clustersToApprove) {
+        initial[c.id] = c.category_id || getAutoCategory(c);
+      }
+      setClusterCategoryMap(initial);
+      setExcludedIds(new Set());
+    }
+  }, [open, clustersToApprove, getAutoCategory]);
+
+  const selectedClusters = useMemo(
+    () => clustersToApprove.filter((c) => !excludedIds.has(c.id)),
+    [clustersToApprove, excludedIds],
+  );
+
+  const totalTxns = useMemo(
+    () => selectedClusters.reduce((acc, c) => acc + clusterTxnCount(c), 0),
+    [selectedClusters],
+  );
+
+  const totalMoney = useMemo(
+    () => selectedClusters.reduce((acc, c) => acc + clusterTotal(c), 0),
+    [selectedClusters],
+  );
+
+  const toggleExclude = (id: string) => {
+    setExcludedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleCategoryChange = (clusterId: string, newCategoryId: string | null) => {
+    setClusterCategoryMap((prev) => ({ ...prev, [clusterId]: newCategoryId }));
+  };
+
+  const handleApprove = () => {
+    const approved = selectedClusters.map((c) => ({
+      id: c.id,
+      category_id: clusterCategoryMap[c.id] ?? c.category_id,
+    }));
+    onConfirmApprove(approved);
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-base">
+            <Zap className="h-5 w-5 fill-current" />
+            Approve High-Confidence Payees & Categories
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-hidden flex flex-col gap-3 py-1 text-xs">
+          {/* Summary Strip */}
+          <div className="grid grid-cols-3 gap-2 rounded-xl border bg-emerald-500/10 border-emerald-500/30 p-3 text-center">
+            <div>
+              <p className="text-[10px] uppercase font-medium text-muted-foreground">Payees Selected</p>
+              <p className="text-base font-bold text-emerald-950 dark:text-emerald-100">
+                {selectedClusters.length} / {clustersToApprove.length}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase font-medium text-muted-foreground">Transactions</p>
+              <p className="text-base font-bold text-emerald-950 dark:text-emerald-100">
+                {totalTxns.toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase font-medium text-muted-foreground">Total Value</p>
+              <p className="text-base font-bold text-emerald-950 dark:text-emerald-100">
+                {money(totalMoney)}
+              </p>
+            </div>
+          </div>
+
+          <p className="text-muted-foreground text-[11px]">
+            Review payees and assigned categories below. You can change categories or uncheck any payee before approving:
+          </p>
+
+          {/* Scrollable Payee List */}
+          <div className="flex-1 overflow-auto rounded-xl border bg-card p-2 space-y-2 max-h-[380px]">
+            {clustersToApprove.map((c) => {
+              const isChecked = !excludedIds.has(c.id);
+              const currentCatId = clusterCategoryMap[c.id] ?? c.category_id;
+              const count = clusterTxnCount(c);
+              const total = clusterTotal(c);
+
+              return (
+                <div
+                  key={c.id}
+                  className={cn(
+                    "flex flex-wrap items-center justify-between gap-3 rounded-lg border p-2.5 transition-colors",
+                    isChecked ? "bg-background border-emerald-500/30 shadow-xs" : "bg-muted/40 opacity-60 border-border",
+                  )}
+                >
+                  <div className="flex items-center gap-2.5 min-w-[240px] flex-1">
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={() => toggleExclude(c.id)}
+                      aria-label={`Include ${c.name}`}
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs truncate">{c.name}</span>
+                        <MatchSourceBadge source={c.source} />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {c.members[0]?.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Category Selector Dropdown */}
+                  <div className="w-[190px] shrink-0">
+                    <CategorySelect
+                      categories={categories}
+                      value={currentCatId}
+                      onChange={(v) => handleCategoryChange(c.id, v)}
+                      onCategoryCreated={onCategoryCreated}
+                    />
+                  </div>
+
+                  <div className="text-right shrink-0 text-xs min-w-[80px]">
+                    <p className="font-semibold tabular-nums">{money(total)}</p>
+                    <p className="text-[10px] text-muted-foreground">{count} txns</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0 pt-2.5 border-t">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs gap-1.5 shadow"
+            disabled={selectedClusters.length === 0}
+            onClick={handleApprove}
+          >
+            <Check className="h-3.5 w-3.5" />
+            Approve {selectedClusters.length} Payees ({totalTxns} txns)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
