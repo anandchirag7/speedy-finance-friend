@@ -327,7 +327,6 @@ function CategoriesPage() {
                 <Button
                   variant="outline"
                   onClick={() => setImportOpen(true)}
-                  className="hidden md:inline-flex"
                 >
                   <UploadCloud className="mr-1.5 h-4 w-4" /> Import CSV
                 </Button>
