@@ -168,70 +168,103 @@ export const importCategoriesCsv = createServerFn({ method: "POST" })
       if (!anyByName.has(n)) anyByName.set(n, c.id);
     }
 
-    // Process parents before children so nested rows can resolve.
-    const ordered = [...data.rows].sort((a, b) => Number(!!a.parent) - Number(!!b.parent));
+    // Group rows into depth levels so each level can be written in one batch.
+    // Depth 0 = no parent, depth n = parent appears as a row at depth n-1.
+    const rowsByNameLower = new Map<string, (typeof data.rows)[number]>();
+    for (const r of data.rows) {
+      const n = r.name.trim().toLowerCase();
+      if (!rowsByNameLower.has(n)) rowsByNameLower.set(n, r);
+    }
+    const depthOf = (row: (typeof data.rows)[number], seen = new Set<string>()): number => {
+      if (!row.parent) return 0;
+      const pn = row.parent.trim().toLowerCase();
+      if (seen.has(pn)) return 0; // cycle guard
+      const parentRow = rowsByNameLower.get(pn);
+      if (!parentRow) return 0; // parent must already exist in DB
+      seen.add(pn);
+      return 1 + depthOf(parentRow, seen);
+    };
+    const levels: (typeof data.rows)[] = [];
+    for (const row of data.rows) {
+      const d = Math.min(depthOf(row), 20);
+      (levels[d] ??= []).push(row);
+    }
 
     let created = 0;
     let updated = 0;
     let skipped = 0;
     const errors: string[] = [];
 
-    for (const row of ordered) {
-      let parentId: string | null = null;
-      if (row.parent) {
-        const pn = row.parent.trim().toLowerCase();
-        parentId = rootsByName.get(pn) ?? anyByName.get(pn) ?? null;
-        if (!parentId) {
-          skipped++;
-          errors.push(`"${row.name}": parent "${row.parent}" not found.`);
-          continue;
+    const CHUNK = 500;
+
+    for (const level of levels) {
+      if (!level?.length) continue;
+      const toInsert: any[] = [];
+      const toUpdate: any[] = [];
+
+      for (const row of level) {
+        let parentId: string | null = null;
+        if (row.parent) {
+          const pn = row.parent.trim().toLowerCase();
+          parentId = rootsByName.get(pn) ?? anyByName.get(pn) ?? null;
+          if (!parentId) {
+            skipped++;
+            errors.push(`"${row.name}": parent "${row.parent}" not found.`);
+            continue;
+          }
         }
+
+        const payload = {
+          household_id: householdId,
+          name: row.name.trim(),
+          kind: row.kind,
+          scope: row.scope,
+          parent_id: parentId,
+          description: row.description ?? null,
+          group_label: row.group_label ?? null,
+          tax_code: row.tax_code ?? null,
+          is_hidden: row.is_hidden,
+        };
+
+        const existingId = byKey.get(key(row.name, parentId));
+        if (existingId) toUpdate.push({ ...payload, id: existingId });
+        else toInsert.push({ ...payload, is_system: false });
       }
 
-      const payload = {
-        household_id: householdId,
-        name: row.name.trim(),
-        kind: row.kind,
-        scope: row.scope,
-        parent_id: parentId,
-        description: row.description ?? null,
-        group_label: row.group_label ?? null,
-        tax_code: row.tax_code ?? null,
-        is_hidden: row.is_hidden,
-      };
-
-      const existingId = byKey.get(key(row.name, parentId));
-      if (existingId) {
-        const { error } = await context.supabase
-          .from("categories")
-          .update(payload)
-          .eq("id", existingId)
-          .eq("household_id", householdId);
+      // Batched updates via primary-key upsert.
+      for (let i = 0; i < toUpdate.length; i += CHUNK) {
+        const chunk = toUpdate.slice(i, i + CHUNK);
+        const { error } = await context.supabase.from("categories").upsert(chunk, { onConflict: "id" });
         if (error) {
-          skipped++;
-          errors.push(`"${row.name}": ${error.message}`);
+          skipped += chunk.length;
+          errors.push(`Update batch failed: ${error.message}`);
           continue;
         }
-        updated++;
-        continue;
+        updated += chunk.length;
       }
 
-      const { data: inserted, error } = await context.supabase
-        .from("categories")
-        .insert({ ...payload, is_system: false })
-        .select("id, name, parent_id")
-        .single();
-      if (error || !inserted) {
-        skipped++;
-        errors.push(`"${row.name}": ${error?.message ?? "insert failed"}`);
-        continue;
+      // Batched inserts; returned ids feed the next depth level.
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        const chunk = toInsert.slice(i, i + CHUNK);
+        const { data: inserted, error } = await context.supabase
+          .from("categories")
+          .insert(chunk)
+          .select("id, name, parent_id");
+        if (error || !inserted) {
+          skipped += chunk.length;
+          errors.push(`Insert batch failed: ${error?.message ?? "insert failed"}`);
+          continue;
+        }
+        created += inserted.length;
+        for (const ins of inserted as any[]) {
+          byKey.set(key(ins.name, ins.parent_id ?? null), ins.id);
+          const n = String(ins.name).trim().toLowerCase();
+          if (!ins.parent_id) rootsByName.set(n, ins.id);
+          if (!anyByName.has(n)) anyByName.set(n, ins.id);
+        }
       }
-      created++;
-      byKey.set(key(inserted.name, inserted.parent_id ?? null), inserted.id);
-      const n = String(inserted.name).trim().toLowerCase();
-      if (!inserted.parent_id) rootsByName.set(n, inserted.id);
-      if (!anyByName.has(n)) anyByName.set(n, inserted.id);
     }
 
     return { created, updated, skipped, errors: errors.slice(0, 50) };
   });
+
