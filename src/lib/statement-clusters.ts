@@ -478,3 +478,77 @@ export function moveMembers(
     })
     .filter((c) => c.members.length > 0);
 }
+
+/** Determine confidence tier for smart auto-approve (tier1 = >85% / rule hit, tier2 = 50-85%, tier3 = <50% / uncategorized). */
+export function getClusterTier(c: Cluster): "tier1" | "tier2" | "tier3" {
+  if (c.status === "approved") return "tier1";
+  if (c.source === "alias" || c.source === "rule" || c.source === "payee" || c.confidence >= 0.85) {
+    return "tier1";
+  }
+  if (c.category_id && c.confidence >= 0.5) {
+    return "tier2";
+  }
+  return "tier3";
+}
+
+/** Batch approve all high-confidence clusters (Tier 1 & Tier 2) in 1 click. */
+export function approveHighConfidenceClusters(clusters: Cluster[], includeTier2 = true): Cluster[] {
+  return clusters.map((c) => {
+    if (c.status === "ignored") return c;
+    const tier = getClusterTier(c);
+    if (tier === "tier1" || (includeTier2 && tier === "tier2")) {
+      return { ...c, status: "approved" as ClusterStatus };
+    }
+    return c;
+  });
+}
+
+export type CategoryClusterGroup = {
+  categoryId: string | null;
+  categoryName: string;
+  clusters: Cluster[];
+  totalAmount: number;
+  totalTxns: number;
+};
+
+/** Group clusters by their assigned category for Category View Mode. */
+export function groupClustersByCategory(
+  clusters: Cluster[],
+  categories: Array<{ id: string; name: string }>,
+): CategoryClusterGroup[] {
+  const catMap = new Map<string, string>();
+  for (const cat of categories) catMap.set(cat.id, cat.name);
+
+  const groups = new Map<string | null, Cluster[]>();
+  for (const c of clusters) {
+    const key = c.category_id;
+    const list = groups.get(key) ?? [];
+    list.push(c);
+    groups.set(key, list);
+  }
+
+  const result: CategoryClusterGroup[] = [];
+  for (const [catId, list] of groups.entries()) {
+    const name = catId ? catMap.get(catId) ?? "Other Category" : "Uncategorized";
+    let amount = 0;
+    let txns = 0;
+    for (const cl of list) {
+      amount += clusterTotal(cl);
+      txns += clusterTxnCount(cl);
+    }
+    result.push({
+      categoryId: catId,
+      categoryName: name,
+      clusters: list,
+      totalAmount: amount,
+      totalTxns: txns,
+    });
+  }
+
+  // Put Uncategorized first, then sort by transaction volume
+  return result.sort((a, b) => {
+    if (!a.categoryId) return -1;
+    if (!b.categoryId) return 1;
+    return b.totalTxns - a.totalTxns;
+  });
+}

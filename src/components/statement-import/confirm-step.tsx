@@ -11,6 +11,9 @@ import {
   Check,
   Users,
   Loader2,
+  Grid,
+  Layers,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,14 +34,18 @@ import {
 } from "@/components/ui/sheet";
 import {
   Cluster,
+  ClusterStatus,
   clusterTotal,
   clusterTxnCount,
   memberCohesion,
   mergeClusters,
   moveMembers,
   splitCluster,
-
   summarize,
+  getClusterTier,
+  approveHighConfidenceClusters,
+  groupClustersByCategory,
+  type CategoryClusterGroup,
 } from "@/lib/statement-clusters";
 import { MatchSourceBadge, StatusBadge, ConfidenceMeter } from "./badges";
 import { cn } from "@/lib/utils";
@@ -375,9 +382,11 @@ export function ConfirmStep({
   onContinue: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterKey>("all");
+  const [filter, setFilter] = useState<FilterKey>("review");
+  const [viewMode, setViewMode] = useState<"payee" | "category">("payee");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [catExpanded, setCatExpanded] = useState<Record<string, boolean>>({});
   const [splitId, setSplitId] = useState<string | null>(null);
   const [splitPicked, setSplitPicked] = useState<string[]>([]);
   const [moveTargetId, setMoveTargetId] = useState<string>("");
@@ -385,6 +394,18 @@ export function ConfirmStep({
   const parentRef = useRef<HTMLDivElement>(null);
 
   const stats = useMemo(() => summarize(clusters), [clusters]);
+
+  const highConfUnapproved = useMemo(() => {
+    return clusters.filter((c) => {
+      if (c.status === "approved" || c.status === "ignored") return false;
+      const tier = getClusterTier(c);
+      return tier === "tier1" || tier === "tier2";
+    });
+  }, [clusters]);
+
+  const highConfUnapprovedTxns = useMemo(() => {
+    return highConfUnapproved.reduce((acc, c) => acc + clusterTxnCount(c), 0);
+  }, [highConfUnapproved]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -404,6 +425,10 @@ export function ConfirmStep({
       })
       .sort((a, b) => clusterTxnCount(b) - clusterTxnCount(a));
   }, [clusters, filter, query]);
+
+  const categoryGroups = useMemo(() => {
+    return groupClustersByCategory(visible, categories);
+  }, [visible, categories]);
 
   const virtualizer = useVirtualizer({
     count: visible.length,
@@ -436,6 +461,32 @@ export function ConfirmStep({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+      {/* 1-Click High Confidence Approval Banner */}
+      {highConfUnapproved.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 shadow-sm">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 font-bold text-xs">
+              ⚡
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-emerald-950 dark:text-emerald-100">
+                {highConfUnapproved.length} high-confidence payees recognized ({highConfUnapprovedTxns.toLocaleString()} transactions)
+              </p>
+              <p className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80">
+                Rules, memorized payees & high AI confidence matches ready for 1-click approval
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs px-3 shadow"
+            onClick={() => setClusters(approveHighConfidenceClusters(clusters))}
+          >
+            ⚡ 1-Click Approve All {highConfUnapproved.length} High-Confidence
+          </Button>
+        </div>
+      )}
+
       {/* Summary */}
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-7">
         <StatTile label="Transactions" value={stats.transactions.toLocaleString()} />
@@ -448,14 +499,6 @@ export function ConfirmStep({
         <StatTile
           label="Auto matched"
           value={stats.autoMatched}
-          tone="text-success"
-          active={filter === "existing"}
-          onClick={() => setFilter("existing")}
-        />
-        <StatTile
-          label="AI suggested"
-          value={stats.aiSuggested}
-          tone="text-ai"
           active={filter === "ai"}
           onClick={() => setFilter("ai")}
         />
@@ -489,6 +532,28 @@ export function ConfirmStep({
             aria-label="Search clusters"
             className="h-8 pl-7 text-xs"
           />
+        </div>
+        <div className="flex items-center gap-px rounded-lg border bg-muted/40 p-px">
+          <button
+            type="button"
+            onClick={() => setViewMode("payee")}
+            className={cn(
+              "flex items-center gap-1 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors",
+              viewMode === "payee" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Grid className="h-3 w-3" /> By Payee ({visible.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("category")}
+            className={cn(
+              "flex items-center gap-1 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors",
+              viewMode === "category" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Layers className="h-3 w-3" /> By Category ({categoryGroups.length})
+          </button>
         </div>
         <div className="flex items-center gap-px rounded-lg border bg-muted/40 p-px">
           {FILTERS.map((f) => (
@@ -553,55 +618,124 @@ export function ConfirmStep({
         </div>
       )}
 
-      {/* Virtualized cluster list */}
-      <div ref={parentRef} className="min-h-[240px] flex-1 overflow-auto rounded-xl border bg-muted/15 p-1.5">
-        {visible.length === 0 ? (
-          <p className="p-6 text-center text-xs text-muted-foreground">No clusters match this view.</p>
-        ) : (
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {virtualizer.getVirtualItems().map((v) => {
-              const c = visible[v.index]!;
-              return (
-                <div
-                  key={c.id}
-                  ref={virtualizer.measureElement}
-                  data-index={v.index}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    transform: `translateY(${v.start}px)`,
-                    padding: "3px",
-                  }}
-                >
-                  <ClusterCard
-                    cluster={c}
-                    clusters={clusters}
-                    categories={categories}
-                    selected={selectedIds.includes(c.id)}
-                    expanded={!!expanded[c.id]}
-                    onToggleSelect={() =>
-                      setSelectedIds((prev) =>
-                        prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id],
-                      )
-                    }
-                    onToggleExpand={() => setExpanded((p) => ({ ...p, [c.id]: !p[c.id] }))}
-                    onPatch={(p) => patch(c.id, p)}
-                    onSplit={() => {
-                      setSplitId(c.id);
-                      setSplitPicked([]);
+      {/* Main content list */}
+      {viewMode === "category" ? (
+        <div className="min-h-[240px] flex-1 overflow-auto space-y-2 rounded-xl border bg-muted/15 p-2">
+          {categoryGroups.map((group) => {
+            const isCatOpen = catExpanded[group.categoryName] ?? true;
+            return (
+              <div key={group.categoryName} className="rounded-xl border bg-card p-3 shadow-sm space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCatExpanded((p) => ({ ...p, [group.categoryName]: !isCatOpen }))}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+                    >
+                      {isCatOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </button>
+                    <span className="font-semibold text-sm">{group.categoryName}</span>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {group.clusters.length} payees · {group.totalTxns} txns
+                    </span>
+                    <span className="text-xs tabular-nums text-muted-foreground">{money(group.totalAmount)}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 border-emerald-500/40 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    onClick={() => {
+                      const ids = new Set(group.clusters.map((c) => c.id));
+                      setClusters(clusters.map((c) => (ids.has(c.id) ? { ...c, status: "approved" } : c)));
                     }}
-                    onMergeWith={(targetId, memberDesc) => handleMergeWith(c.id, targetId, memberDesc)}
-                    onSaveToBackend={(cl) => onSavePayee?.(cl)}
-                    onCategoryCreated={onCategoryCreated}
-                  />
+                  >
+                    <Check className="h-3 w-3" /> Approve Category ({group.clusters.length})
+                  </Button>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+
+                {isCatOpen && (
+                  <div className="space-y-2 pt-1">
+                    {group.clusters.map((c) => (
+                      <ClusterCard
+                        key={c.id}
+                        cluster={c}
+                        clusters={clusters}
+                        categories={categories}
+                        selected={selectedIds.includes(c.id)}
+                        expanded={!!expanded[c.id]}
+                        onToggleSelect={() =>
+                          setSelectedIds((prev) =>
+                            prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id],
+                          )
+                        }
+                        onToggleExpand={() => setExpanded((p) => ({ ...p, [c.id]: !p[c.id] }))}
+                        onPatch={(p) => patch(c.id, p)}
+                        onSplit={() => {
+                          setSplitId(c.id);
+                          setSplitPicked([]);
+                        }}
+                        onMergeWith={(targetId, memberDesc) => handleMergeWith(c.id, targetId, memberDesc)}
+                        onSaveToBackend={onSavePayee}
+                        onCategoryCreated={onCategoryCreated}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Virtualized payee list */
+        <div ref={parentRef} className="min-h-[240px] flex-1 overflow-auto rounded-xl border bg-muted/15 p-1.5">
+          {visible.length === 0 ? (
+            <p className="p-6 text-center text-xs text-muted-foreground">No clusters match this view.</p>
+          ) : (
+            <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+              {virtualizer.getVirtualItems().map((v) => {
+                const c = visible[v.index]!;
+                return (
+                  <div
+                    key={c.id}
+                    ref={virtualizer.measureElement}
+                    data-index={v.index}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${v.start}px)`,
+                      padding: "3px",
+                    }}
+                  >
+                    <ClusterCard
+                      cluster={c}
+                      clusters={clusters}
+                      categories={categories}
+                      selected={selectedIds.includes(c.id)}
+                      expanded={!!expanded[c.id]}
+                      onToggleSelect={() =>
+                        setSelectedIds((prev) =>
+                          prev.includes(c.id) ? prev.filter((x) => x !== c.id) : [...prev, c.id],
+                        )
+                      }
+                      onToggleExpand={() => setExpanded((p) => ({ ...p, [c.id]: !p[c.id] }))}
+                      onPatch={(p) => patch(c.id, p)}
+                      onSplit={() => {
+                        setSplitId(c.id);
+                        setSplitPicked([]);
+                      }}
+                      onMergeWith={(targetId, memberDesc) => handleMergeWith(c.id, targetId, memberDesc)}
+                      onSaveToBackend={onSavePayee}
+                      onCategoryCreated={onCategoryCreated}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center justify-between border-t pt-2.5">
         <Button variant="ghost" size="sm" onClick={onBack}>
