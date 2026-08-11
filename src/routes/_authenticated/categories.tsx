@@ -568,6 +568,15 @@ function CategoriesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <CategoryCsvUploadModal
+          open={csvOpen}
+          onOpenChange={setCsvOpen}
+          onImportSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["categories-full"] });
+            qc.invalidateQueries({ queryKey: ["categories"] });
+          }}
+        />
       </div>
     </TooltipProvider>
   );
@@ -1486,15 +1495,6 @@ function EditDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <CategoryCsvUploadModal
-        open={csvOpen}
-        onOpenChange={setCsvOpen}
-        onImportSuccess={() => {
-          qc.invalidateQueries({ queryKey: ["categories-full"] });
-          qc.invalidateQueries({ queryKey: ["categories"] });
-        }}
-      />
     </>
   );
 }
