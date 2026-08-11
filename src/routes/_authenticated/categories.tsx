@@ -175,6 +175,7 @@ function CategoriesPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<Partial<Cat> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Cat | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const all = (cats ?? []) as Cat[];
 
