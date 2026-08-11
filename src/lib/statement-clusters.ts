@@ -333,6 +333,7 @@ export function buildClusters(opts: {
           break;
         }
       }
+    }
     const name = hit?.payee ?? existing?.merchant ?? titleCase(rep);
 
     let source: MatchSource = hit ? sourceOf(hit.source) : group.length > 1 ? "cluster" : "pending";
