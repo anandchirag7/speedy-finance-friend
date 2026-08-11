@@ -336,6 +336,21 @@ function CategoriesPage() {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
+                  onClick={() => {
+                    const anyOpen = Object.values(expanded).some(Boolean);
+                    if (anyOpen) setExpanded({});
+                    else {
+                      const next: Record<string, boolean> = {};
+                      for (const id of tree.kids.keys()) next[id] = true;
+                      setExpanded(next);
+                    }
+                  }}
+                >
+                  {Object.values(expanded).some(Boolean) ? "Collapse all" : "Expand all"}
+                </Button>
+
+                <Button
+                  variant="outline"
                   onClick={() => setImportOpen(true)}
                 >
                   <UploadCloud className="mr-1.5 h-4 w-4" /> Import CSV
