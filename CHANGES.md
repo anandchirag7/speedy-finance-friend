@@ -49,3 +49,7 @@ This file tracks all modified and newly created files along with their date of c
 - `src/routes/auth.tsx`
 - `src/lib/demo.functions.ts`
 - `CHANGES.md`
+
+## 2026-08-11
+- `.env`
+- `CHANGES.md`
