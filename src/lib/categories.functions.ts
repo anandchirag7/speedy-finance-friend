@@ -123,3 +123,115 @@ export const duplicateCategory = createServerFn({ method: "POST" })
     if (error) throw error;
     return saved;
   });
+
+const csvRowSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  parent: z.string().trim().max(100).nullable().optional(),
+  kind: z.enum(["income", "expense", "transfer", "investment"]),
+  scope: z.enum(["personal", "business"]).default("personal"),
+  description: z.string().trim().max(500).nullable().optional(),
+  group_label: z.string().trim().max(80).nullable().optional(),
+  tax_code: z.string().trim().max(80).nullable().optional(),
+  is_hidden: z.boolean().default(false),
+});
+
+/**
+ * Bulk import categories from a parsed CSV. Parents are resolved by name
+ * (existing rows first, then rows created in this same import). Matching
+ * name + parent updates in place instead of duplicating.
+ */
+export const importCategoriesCsv = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ rows: z.array(csvRowSchema).min(1).max(5000) }).parse(data),
+  )
+  .handler(async ({ context, data }) => {
+    const householdId = await getHouseholdId(context);
+    const { data: existing, error: e1 } = await context.supabase
+      .from("categories")
+      .select("id, name, parent_id")
+      .eq("household_id", householdId);
+    if (e1) throw e1;
+
+    const key = (name: string, parentId: string | null) =>
+      `${(parentId ?? "root").toLowerCase()}|${name.trim().toLowerCase()}`;
+    const byKey = new Map<string, string>();
+    const rootsByName = new Map<string, string>();
+    for (const c of (existing ?? []) as any[]) {
+      byKey.set(key(c.name, c.parent_id ?? null), c.id);
+      if (!c.parent_id) rootsByName.set(c.name.trim().toLowerCase(), c.id);
+    }
+    // Any category can be a parent — index every name for fallback lookup.
+    const anyByName = new Map<string, string>();
+    for (const c of (existing ?? []) as any[]) {
+      const n = c.name.trim().toLowerCase();
+      if (!anyByName.has(n)) anyByName.set(n, c.id);
+    }
+
+    // Process parents before children so nested rows can resolve.
+    const ordered = [...data.rows].sort((a, b) => Number(!!a.parent) - Number(!!b.parent));
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const row of ordered) {
+      let parentId: string | null = null;
+      if (row.parent) {
+        const pn = row.parent.trim().toLowerCase();
+        parentId = rootsByName.get(pn) ?? anyByName.get(pn) ?? null;
+        if (!parentId) {
+          skipped++;
+          errors.push(`"${row.name}": parent "${row.parent}" not found.`);
+          continue;
+        }
+      }
+
+      const payload = {
+        household_id: householdId,
+        name: row.name.trim(),
+        kind: row.kind,
+        scope: row.scope,
+        parent_id: parentId,
+        description: row.description ?? null,
+        group_label: row.group_label ?? null,
+        tax_code: row.tax_code ?? null,
+        is_hidden: row.is_hidden,
+      };
+
+      const existingId = byKey.get(key(row.name, parentId));
+      if (existingId) {
+        const { error } = await context.supabase
+          .from("categories")
+          .update(payload)
+          .eq("id", existingId)
+          .eq("household_id", householdId);
+        if (error) {
+          skipped++;
+          errors.push(`"${row.name}": ${error.message}`);
+          continue;
+        }
+        updated++;
+        continue;
+      }
+
+      const { data: inserted, error } = await context.supabase
+        .from("categories")
+        .insert({ ...payload, is_system: false })
+        .select("id, name, parent_id")
+        .single();
+      if (error || !inserted) {
+        skipped++;
+        errors.push(`"${row.name}": ${error?.message ?? "insert failed"}`);
+        continue;
+      }
+      created++;
+      byKey.set(key(inserted.name, inserted.parent_id ?? null), inserted.id);
+      const n = String(inserted.name).trim().toLowerCase();
+      if (!inserted.parent_id) rootsByName.set(n, inserted.id);
+      if (!anyByName.has(n)) anyByName.set(n, inserted.id);
+    }
+
+    return { created, updated, skipped, errors: errors.slice(0, 50) };
+  });

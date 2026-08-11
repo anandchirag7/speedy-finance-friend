@@ -22,7 +22,9 @@ import {
   Receipt,
   FolderTree,
   Info,
+  UploadCloud,
 } from "lucide-react";
+import { ImportCategoriesDialog } from "@/components/categories/import-csv-dialog";
 import { toast } from "sonner";
 import {
   listCategoriesWithUsage,
@@ -173,6 +175,7 @@ function CategoriesPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<Partial<Cat> | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Cat | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const all = (cats ?? []) as Cat[];
 
@@ -320,20 +323,28 @@ function CategoriesPage() {
                   Organize how money moves — group transactions, map to tax codes, and keep your books tidy.
                 </p>
               </div>
-              <Button
-                onClick={() =>
-                  setEditing({
-                    name: "",
-                    kind: scope.includes("income") ? "income" : "expense",
-                    scope: scope.startsWith("biz") ? "business" : "personal",
-                    is_hidden: false,
-                    sort_order: 0,
-                  })
-                }
-                className="hidden md:inline-flex"
-              >
-                <Plus className="mr-1.5 h-4 w-4" /> Add Category
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setImportOpen(true)}
+                >
+                  <UploadCloud className="mr-1.5 h-4 w-4" /> Import CSV
+                </Button>
+                <Button
+                  onClick={() =>
+                    setEditing({
+                      name: "",
+                      kind: scope.includes("income") ? "income" : "expense",
+                      scope: scope.startsWith("biz") ? "business" : "personal",
+                      is_hidden: false,
+                      sort_order: 0,
+                    })
+                  }
+                  className="hidden md:inline-flex"
+                >
+                  <Plus className="mr-1.5 h-4 w-4" /> Add Category
+                </Button>
+              </div>
             </div>
 
             {/* Toolbar */}
@@ -504,6 +515,8 @@ function CategoriesPage() {
         >
           <Plus className="h-6 w-6" />
         </Button>
+
+        <ImportCategoriesDialog open={importOpen} onOpenChange={setImportOpen} />
 
         <EditDialog
           value={editing}
