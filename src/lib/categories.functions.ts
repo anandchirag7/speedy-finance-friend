@@ -13,32 +13,47 @@ async function getHouseholdId(ctx: { supabase: any; userId: string }): Promise<s
   return data.default_household_id as string;
 }
 
+const PAGE = 1000;
+
 export const listCategoriesWithUsage = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const householdId = await getHouseholdId(context);
-    const [{ data: cats, error: e1 }, { data: txns, error: e2 }] = await Promise.all([
-      context.supabase
+
+    // PostgREST caps rows per request, so page through both tables explicitly.
+    const cats: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await context.supabase
         .from("categories")
         .select("*")
         .eq("household_id", householdId)
         .order("sort_order", { ascending: true })
-        .order("name", { ascending: true }),
-      context.supabase
+        .order("name", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      cats.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+
+    const counts: Record<string, number> = {};
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await context.supabase
         .from("transactions")
         .select("category_id")
         .eq("household_id", householdId)
-        .not("category_id", "is", null),
-    ]);
-    if (e1) throw e1;
-    if (e2) throw e2;
-    const counts: Record<string, number> = {};
-    for (const t of txns ?? []) {
-      const id = (t as any).category_id as string;
-      counts[id] = (counts[id] ?? 0) + 1;
+        .not("category_id", "is", null)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      for (const t of data ?? []) {
+        const id = (t as any).category_id as string;
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
+      if (!data || data.length < PAGE) break;
     }
-    return (cats ?? []).map((c: any) => ({ ...c, usage_count: counts[c.id] ?? 0 }));
+
+    return cats.map((c: any) => ({ ...c, usage_count: counts[c.id] ?? 0 }));
   });
+
 
 const categorySchema = z.object({
   id: z.string().uuid().optional(),
