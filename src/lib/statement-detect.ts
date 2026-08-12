@@ -32,6 +32,7 @@ export type StatementDetection = {
   pages: number | null;
   estimatedRows: number | null;
   confidence: number;
+  sheetName?: string | null;
   fingerprint: string;
   issues: StatementIssue[];
 };

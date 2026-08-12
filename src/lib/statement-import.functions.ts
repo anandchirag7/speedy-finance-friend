@@ -783,7 +783,7 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
         for (let j = 0; j < rawTxns.length; j++) {
           if (j === i) continue;
           if (isEmiChild(rawTxns[j]) || isEmiCredit(rawTxns[j])) continue;
-          const candidateStr = cleanStr(`${rawTxns[j].description ?? ""} ${rawTxns[j].merchant ?? ""}`);
+          const candidateStr = cleanStr(`${(rawTxns[j] as any).description ?? rawTxns[j].note ?? ""} ${rawTxns[j].merchant ?? ""}`);
           const isParentType = rawTxns[j].type === "expense" || candidateStr.includes("MOTHERCARE");
           if (isParentType) {
             const diff = Math.abs(rawTxns[j].amount - creditAmt);

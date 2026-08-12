@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Search,
@@ -57,7 +57,7 @@ import {
 import { MatchSourceBadge, StatusBadge, ConfidenceMeter } from "./badges";
 import { cn } from "@/lib/utils";
 
-type Category = { id: string; name: string; parent_id: string | null };
+type Category = { id: string; name: string; parent_id?: string | null };
 
 const money = (n: number) =>
   n.toLocaleString(undefined, { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -150,7 +150,7 @@ function ClusterCard({
   onPatch: (patch: Partial<Cluster>) => void;
   onSplit: () => void;
   onMergeWith: (targetId: string, memberDesc?: string) => void;
-  onSaveToBackend: (cluster: Cluster) => void;
+  onSaveToBackend?: (cluster: Cluster) => void;
   onCategoryCreated?: (c: CategoryItem) => void;
 }) {
   const count = clusterTxnCount(cluster);
@@ -197,7 +197,7 @@ function ClusterCard({
             <div className="flex items-center gap-1 min-w-[220px] max-w-[320px] flex-1">
               <Input
                 value={cluster.name}
-                onChange={(e) => onPatch({ name: e.target.value, source: "manual", status: "approved", confidence: 1 })}
+                onChange={(e) => onPatch({ name: e.target.value, source: "manual", confidence: 1 })}
                 aria-label="Payee name"
                 className="h-7 text-xs font-medium"
               />
@@ -210,7 +210,6 @@ function ClusterCard({
                       name: target.name,
                       category_id: target.category_id ?? cluster.category_id,
                       source: "manual",
-                      status: "approved",
                       confidence: 1,
                     });
                   }
@@ -285,7 +284,7 @@ function ClusterCard({
                 className="h-7 px-2 text-xs"
                 onClick={() => {
                   onPatch({ status: "approved", pendingAi: false });
-                  onSaveToBackend(cluster);
+                  onSaveToBackend?.(cluster);
                 }}
               >
                 <Check className="mr-1 h-3 w-3" aria-hidden />

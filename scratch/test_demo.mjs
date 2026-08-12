@@ -3,31 +3,42 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://slbxzzbpsiabyrelepax.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = "sb_secret_0iLwInkHyN0RARmZd1X8tQ_-vc5Rw0C";
 
-// Standard Supabase Admin Client
+function isNewSupabaseApiKey(value) {
+  return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
+}
+
+function createSupabaseFetch(supabaseKey) {
+  return (input, init) => {
+    const headers = new Headers(
+      typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined,
+    );
+
+    if (init?.headers) {
+      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    }
+
+    const requestUrl = typeof input === 'string' ? input : input instanceof Request ? input.url : '';
+    if (!requestUrl.includes('/auth/v1') && isNewSupabaseApiKey(supabaseKey) && headers.get('Authorization') === `Bearer ${supabaseKey}`) {
+      headers.delete('Authorization');
+    }
+
+    headers.set('apikey', supabaseKey);
+    return fetch(input, { ...init, headers });
+  };
+}
+
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  global: { fetch: createSupabaseFetch(SUPABASE_SERVICE_ROLE_KEY) },
   auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
 });
 
 async function main() {
-  console.log("Testing standard listUsers...");
+  console.log("Testing listUsers with preserved Auth header...");
   const { data: list, error: listErr } = await supabaseAdmin.auth.admin.listUsers();
-  if (listErr) console.error("listUsers error:", listErr);
-  else console.log("Found users count:", list?.users?.length, list?.users?.map(u => u.email));
-
-  const DEMO_EMAIL = "demo@paisa.app";
-  const DEMO_PASSWORD = "DemoPaisa!2026";
-  const existing = list?.users?.find((u) => u.email?.toLowerCase() === DEMO_EMAIL);
-  console.log("Existing demo user ID:", existing?.id);
-
-  if (!existing) {
-    console.log("Creating demo user...");
-    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email: DEMO_EMAIL,
-      password: DEMO_PASSWORD,
-      email_confirm: true,
-      user_metadata: { display_name: "Demo User" },
-    });
-    console.log("Create user result:", createErr ? createErr.message : created?.user?.id);
+  if (listErr) {
+    console.error("listUsers error:", listErr);
+  } else {
+    console.log("Success! Users count:", list?.users?.length, "Demo user:", list?.users?.find(u => u.email === 'demo@paisa.app')?.id);
   }
 }
 

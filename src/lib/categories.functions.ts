@@ -3,50 +3,57 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function getHouseholdId(ctx: { supabase: any; userId: string }): Promise<string> {
-  try {
-    const { data } = await ctx.supabase
-      .from("profiles")
-      .select("default_household_id")
-      .eq("id", ctx.userId)
-      .maybeSingle();
-
-    if (data?.default_household_id) {
-      return data.default_household_id as string;
-    }
-
-    const { data: member } = await ctx.supabase
-      .from("household_members")
-      .select("household_id")
-      .eq("user_id", ctx.userId)
-      .limit(1)
-      .maybeSingle();
-
-    if (member?.household_id) {
-      return member.household_id as string;
-    }
-  } catch (err) {
-    console.warn("getHouseholdId lookup warning:", err);
-  }
-
-  return ctx.userId;
+  const { data, error } = await ctx.supabase
+    .from("profiles")
+    .select("default_household_id")
+    .eq("id", ctx.userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.default_household_id) throw new Error("No household found for user");
+  return data.default_household_id as string;
 }
+
+const PAGE = 1000;
 
 export const listCategoriesWithUsage = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const householdId = await getHouseholdId(context);
 
-    const { data: cats, error } = await context.supabase
-      .from("categories")
-      .select("*")
-      .eq("household_id", householdId)
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true });
+    // PostgREST caps rows per request, so page through both tables explicitly.
+    const cats: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await context.supabase
+        .from("categories")
+        .select("*")
+        .eq("household_id", householdId)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      cats.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
 
-    if (error) throw error;
+    const counts: Record<string, number> = {};
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await context.supabase
+        .from("transactions")
+        .select("category_id")
+        .eq("household_id", householdId)
+        .not("category_id", "is", null)
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      for (const t of data ?? []) {
+        const id = (t as any).category_id as string;
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
+      if (!data || data.length < PAGE) break;
+    }
 
-    return (cats ?? []).map((c: any) => ({ ...c, usage_count: 0 }));
+    return cats.map((c: any) => ({ ...c, usage_count: counts[c.id] ?? 0 }));
   });
+
 
 const categorySchema = z.object({
   id: z.string().uuid().optional(),
@@ -65,7 +72,7 @@ const categorySchema = z.object({
 
 export const upsertCategory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => categorySchema.parse(data))
+  .inputValidator((data: unknown) => categorySchema.parse(data))
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
     const row = { ...data, household_id: householdId };
@@ -80,7 +87,7 @@ export const upsertCategory = createServerFn({ method: "POST" })
 
 export const deleteCategory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
     const { error } = await context.supabase
@@ -94,7 +101,7 @@ export const deleteCategory = createServerFn({ method: "POST" })
 
 export const toggleCategoryHidden = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) =>
+  .inputValidator((data: unknown) =>
     z.object({ id: z.string().uuid(), is_hidden: z.boolean() }).parse(data),
   )
   .handler(async ({ context, data }) => {
@@ -110,7 +117,7 @@ export const toggleCategoryHidden = createServerFn({ method: "POST" })
 
 export const duplicateCategory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
     const { data: src, error: e1 } = await context.supabase
@@ -132,209 +139,153 @@ export const duplicateCategory = createServerFn({ method: "POST" })
     return saved;
   });
 
-const DEFAULT_CATEGORIES = [
-  { name: "Food & Dining", kind: "expense", subs: ["Groceries", "Eating Out", "Food Delivery"] },
-  { name: "Transport", kind: "expense", subs: ["Fuel", "Auto/Cab", "Public Transport", "Vehicle Maintenance"] },
-  { name: "Housing", kind: "expense", subs: ["Rent", "Maintenance/Society", "Electricity", "Water", "Gas"] },
-  { name: "Household Help", kind: "expense", subs: ["Maid", "Cook", "Driver"] },
-  { name: "Communication", kind: "expense", subs: ["Mobile", "Internet", "DTH/OTT"] },
-  { name: "Health", kind: "expense", subs: ["Doctor", "Medicines", "Health Insurance"] },
-  { name: "Education", kind: "expense", subs: ["Fees", "Tuition", "Books"] },
-  { name: "Family & Festivals", kind: "expense", subs: ["Weddings", "Festival Shopping", "Gifting", "Pooja/Religious"] },
-  { name: "EMIs & Loans", kind: "expense", subs: [] },
-  { name: "Investments & Savings", kind: "expense", subs: ["SIP", "Lumpsum", "PPF", "NPS"] },
-  { name: "Personal Care", kind: "expense", subs: [] },
-  { name: "Shopping", kind: "expense", subs: ["Clothing", "Electronics", "Online Shopping"] },
-  { name: "Travel & Vacation", kind: "expense", subs: [] },
-  { name: "Entertainment", kind: "expense", subs: [] },
-  { name: "Taxes", kind: "expense", subs: [] },
-  { name: "Insurance Premiums", kind: "expense", subs: [] },
-  { name: "Charity/Donation", kind: "expense", subs: [] },
-  { name: "Miscellaneous", kind: "expense", subs: [] },
-  { name: "Salary", kind: "income", subs: [] },
-  { name: "Business Income", kind: "income", subs: [] },
-  { name: "Interest", kind: "income", subs: [] },
-  { name: "Dividends", kind: "income", subs: [] },
-  { name: "Rental Income", kind: "income", subs: [] },
-  { name: "Other Income", kind: "income", subs: [] },
-];
-
-export const seedDefaultCategories = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const householdId = await getHouseholdId(context);
-
-    // Try RPC first
-    const { error: rpcError } = await context.supabase.rpc("seed_default_categories", {
-      _household_id: householdId,
-    });
-
-    if (!rpcError) return { ok: true };
-
-    // Fallback: Direct table insertion
-    for (const item of DEFAULT_CATEGORIES) {
-      const { data: parent, error: pErr } = await context.supabase
-        .from("categories")
-        .insert({
-          household_id: householdId,
-          name: item.name,
-          kind: item.kind,
-          is_system: true,
-        })
-        .select("id")
-        .single();
-
-      if (pErr) continue;
-
-      if (item.subs.length > 0 && parent?.id) {
-        const subRows = item.subs.map((s) => ({
-          household_id: householdId,
-          parent_id: parent.id,
-          name: s,
-          kind: item.kind,
-          is_system: true,
-        }));
-        await context.supabase.from("categories").insert(subRows);
-      }
-    }
-
-    return { ok: true };
-  });
-
 const csvRowSchema = z.object({
-  name: z.string().min(1).max(100),
-  kind: z.enum(["income", "expense", "transfer", "investment"]).default("expense"),
+  name: z.string().trim().min(1).max(100),
+  parent: z.string().trim().max(100).nullable().optional(),
+  kind: z.enum(["income", "expense", "transfer", "investment"]),
   scope: z.enum(["personal", "business"]).default("personal"),
-  parent_name: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-  color: z.string().nullable().optional(),
-  icon: z.string().nullable().optional(),
-  group_label: z.string().nullable().optional(),
-  tax_code: z.string().nullable().optional(),
+  description: z.string().trim().max(500).nullable().optional(),
+  group_label: z.string().trim().max(80).nullable().optional(),
+  tax_code: z.string().trim().max(80).nullable().optional(),
+  is_hidden: z.boolean().default(false),
 });
 
-export const bulkImportCategoriesFromCSV = createServerFn({ method: "POST" })
+/**
+ * Bulk import categories from a parsed CSV. Parents are resolved by name
+ * (existing rows first, then rows created in this same import). Matching
+ * name + parent updates in place instead of duplicating.
+ */
+export const importCategoriesCsv = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator((data: unknown) => z.object({ rows: z.array(csvRowSchema) }).parse(data))
+  .inputValidator((data: unknown) =>
+    z.object({ rows: z.array(csvRowSchema).min(1).max(5000) }).parse(data),
+  )
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
-
-    // Fetch existing categories (including parent_id so we can detect broken links)
-    const { data: existing } = await context.supabase
-      .from("categories")
-      .select("id, name, parent_id")
-      .eq("household_id", householdId);
-
-    // name (lowercase) → { id, parent_id }
-    const catMap = new Map<string, { id: string; parent_id: string | null }>();
-    for (const c of existing ?? []) {
-      catMap.set(c.name.toLowerCase().trim(), { id: c.id, parent_id: c.parent_id });
+    const existing: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error: e1 } = await context.supabase
+        .from("categories")
+        .select("id, name, parent_id")
+        .eq("household_id", householdId)
+        .range(from, from + PAGE - 1);
+      if (e1) throw e1;
+      existing.push(...(page ?? []));
+      if (!page || page.length < PAGE) break;
     }
 
-    // Track which rows still need to be inserted
-    let pending = data.rows.filter(
-      (r) => !catMap.has(r.name.toLowerCase().trim()),
-    );
-    let totalInserted = 0;
-    let totalUpdated = 0;
-    const CHUNK_SIZE = 500;
-    const MAX_PASSES = 10;
 
-    // ── Phase 1: Multi-pass INSERT new categories ──
-    // Each pass inserts rows whose parent is already resolved (or has no parent).
-    // Pass 0 = roots, pass 1 = children, pass 2 = grandchildren, etc.
-    for (let pass = 0; pass < MAX_PASSES && pending.length > 0; pass++) {
-      const canInsert = pending.filter((r) => {
-        if (!r.parent_name || !r.parent_name.trim()) return true;
-        return catMap.has(r.parent_name.toLowerCase().trim());
-      });
+    const key = (name: string, parentId: string | null) =>
+      `${(parentId ?? "root").toLowerCase()}|${name.trim().toLowerCase()}`;
+    const byKey = new Map<string, string>();
+    const rootsByName = new Map<string, string>();
+    for (const c of (existing ?? []) as any[]) {
+      byKey.set(key(c.name, c.parent_id ?? null), c.id);
+      if (!c.parent_id) rootsByName.set(c.name.trim().toLowerCase(), c.id);
+    }
+    // Any category can be a parent — index every name for fallback lookup.
+    const anyByName = new Map<string, string>();
+    for (const c of (existing ?? []) as any[]) {
+      const n = c.name.trim().toLowerCase();
+      if (!anyByName.has(n)) anyByName.set(n, c.id);
+    }
 
-      if (canInsert.length === 0) {
-        console.warn(
-          `CSV import: ${pending.length} rows have unresolvable parent_name values, skipping.`,
-        );
-        break;
-      }
+    // Group rows into depth levels so each level can be written in one batch.
+    // Depth 0 = no parent, depth n = parent appears as a row at depth n-1.
+    const rowsByNameLower = new Map<string, (typeof data.rows)[number]>();
+    for (const r of data.rows) {
+      const n = r.name.trim().toLowerCase();
+      if (!rowsByNameLower.has(n)) rowsByNameLower.set(n, r);
+    }
+    const depthOf = (row: (typeof data.rows)[number], seen = new Set<string>()): number => {
+      if (!row.parent) return 0;
+      const pn = row.parent.trim().toLowerCase();
+      if (seen.has(pn)) return 0; // cycle guard
+      const parentRow = rowsByNameLower.get(pn);
+      if (!parentRow) return 0; // parent must already exist in DB
+      seen.add(pn);
+      return 1 + depthOf(parentRow, seen);
+    };
+    const levels: (typeof data.rows)[] = [];
+    for (const row of data.rows) {
+      const d = Math.min(depthOf(row), 20);
+      (levels[d] ??= []).push(row);
+    }
 
-      const payloads = canInsert.map((row) => {
-        const parentKey = row.parent_name?.toLowerCase().trim();
-        const parentId = parentKey ? catMap.get(parentKey)?.id ?? null : null;
-        return {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    const CHUNK = 500;
+
+    for (const level of levels) {
+      if (!level?.length) continue;
+      const toInsert: any[] = [];
+      const toUpdate: any[] = [];
+
+      for (const row of level) {
+        let parentId: string | null = null;
+        if (row.parent) {
+          const pn = row.parent.trim().toLowerCase();
+          parentId = rootsByName.get(pn) ?? anyByName.get(pn) ?? null;
+          if (!parentId) {
+            skipped++;
+            errors.push(`"${row.name}": parent "${row.parent}" not found.`);
+            continue;
+          }
+        }
+
+        const payload = {
           household_id: householdId,
-          parent_id: parentId,
           name: row.name.trim(),
           kind: row.kind,
           scope: row.scope,
+          parent_id: parentId,
           description: row.description ?? null,
-          color: row.color ?? null,
-          icon: row.icon ?? null,
           group_label: row.group_label ?? null,
           tax_code: row.tax_code ?? null,
+          is_hidden: row.is_hidden,
         };
-      });
 
-      for (let i = 0; i < payloads.length; i += CHUNK_SIZE) {
-        const chunk = payloads.slice(i, i + CHUNK_SIZE);
-        const { data: saved, error } = await context.supabase
+        const existingId = byKey.get(key(row.name, parentId));
+        if (existingId) toUpdate.push({ ...payload, id: existingId });
+        else toInsert.push({ ...payload, is_system: false });
+      }
+
+      // Batched updates via primary-key upsert.
+      for (let i = 0; i < toUpdate.length; i += CHUNK) {
+        const chunk = toUpdate.slice(i, i + CHUNK);
+        const { error } = await context.supabase.from("categories").upsert(chunk, { onConflict: "id" });
+        if (error) {
+          skipped += chunk.length;
+          errors.push(`Update batch failed: ${error.message}`);
+          continue;
+        }
+        updated += chunk.length;
+      }
+
+      // Batched inserts; returned ids feed the next depth level.
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        const chunk = toInsert.slice(i, i + CHUNK);
+        const { data: inserted, error } = await context.supabase
           .from("categories")
           .insert(chunk)
-          .select("id, name");
-
-        if (error) {
-          console.warn(`CSV import pass ${pass} warning:`, error.message);
-        } else if (saved) {
-          for (const s of saved) {
-            catMap.set(s.name.toLowerCase().trim(), { id: s.id, parent_id: null });
-          }
-          totalInserted += saved.length;
+          .select("id, name, parent_id");
+        if (error || !inserted) {
+          skipped += chunk.length;
+          errors.push(`Insert batch failed: ${error?.message ?? "insert failed"}`);
+          continue;
+        }
+        created += inserted.length;
+        for (const ins of inserted as any[]) {
+          byKey.set(key(ins.name, ins.parent_id ?? null), ins.id);
+          const n = String(ins.name).trim().toLowerCase();
+          if (!ins.parent_id) rootsByName.set(n, ins.id);
+          if (!anyByName.has(n)) anyByName.set(n, ins.id);
         }
       }
-
-      const insertedNames = new Set(
-        canInsert.map((r) => r.name.toLowerCase().trim()),
-      );
-      pending = pending.filter(
-        (r) => !insertedNames.has(r.name.toLowerCase().trim()),
-      );
     }
 
-    // ── Phase 2: UPDATE existing categories that have broken parent_id ──
-    // For CSV rows that already existed in DB but have parent_id=null while CSV specifies a parent
-    const rowsNeedingParentFix = data.rows.filter((r) => {
-      if (!r.parent_name || !r.parent_name.trim()) return false;
-      const key = r.name.toLowerCase().trim();
-      const entry = catMap.get(key);
-      if (!entry) return false; // not in DB at all (shouldn't happen after phase 1)
-      // Only fix if current parent_id is null
-      return !entry.parent_id;
-    });
-
-    for (const row of rowsNeedingParentFix) {
-      const parentKey = row.parent_name!.toLowerCase().trim();
-      const parentEntry = catMap.get(parentKey);
-      if (!parentEntry) continue; // parent doesn't exist, can't fix
-
-      const childKey = row.name.toLowerCase().trim();
-      const childEntry = catMap.get(childKey);
-      if (!childEntry) continue;
-
-      const { error } = await context.supabase
-        .from("categories")
-        .update({ parent_id: parentEntry.id })
-        .eq("id", childEntry.id)
-        .eq("household_id", householdId);
-
-      if (!error) {
-        childEntry.parent_id = parentEntry.id;
-        totalUpdated++;
-      }
-    }
-
-    return {
-      importedCount: totalInserted,
-      updatedCount: totalUpdated,
-      totalProcessed: data.rows.length,
-      skipped: pending.length,
-    };
+    return { created, updated, skipped, errors: errors.slice(0, 50) };
   });
-
