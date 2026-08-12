@@ -162,11 +162,18 @@ export const importCategoriesCsv = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const householdId = await getHouseholdId(context);
-    const { data: existing, error: e1 } = await context.supabase
-      .from("categories")
-      .select("id, name, parent_id")
-      .eq("household_id", householdId);
-    if (e1) throw e1;
+    const existing: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error: e1 } = await context.supabase
+        .from("categories")
+        .select("id, name, parent_id")
+        .eq("household_id", householdId)
+        .range(from, from + PAGE - 1);
+      if (e1) throw e1;
+      existing.push(...(page ?? []));
+      if (!page || page.length < PAGE) break;
+    }
+
 
     const key = (name: string, parentId: string | null) =>
       `${(parentId ?? "root").toLowerCase()}|${name.trim().toLowerCase()}`;
