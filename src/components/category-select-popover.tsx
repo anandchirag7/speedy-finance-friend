@@ -25,9 +25,12 @@ export type CategoryItem = {
  * Builds full hierarchical display label for a category.
  * E.g., "Food & Dining > Restaurants > Fast Food"
  */
-export function getCategoryHierarchyLabel(catId: string | null | undefined, categories: CategoryItem[]): string {
+export function getCategoryHierarchyLabel(
+  catId: string | null | undefined,
+  categories: CategoryItem[] | Map<string, CategoryItem>
+): string {
   if (!catId) return "Uncategorized";
-  const catMap = new Map(categories.map((c) => [c.id, c]));
+  const catMap = categories instanceof Map ? categories : new Map(categories.map((c) => [c.id, c]));
   const parts: string[] = [];
   let curr = catMap.get(catId);
   const visited = new Set<string>();
@@ -72,10 +75,10 @@ export function CategorySelectPopover({
   // Compute full path string for every category for search & display
   const itemsWithPath = useMemo(() => {
     return categories.map((c) => {
-      const fullPath = getCategoryHierarchyLabel(c.id, categories);
+      const fullPath = getCategoryHierarchyLabel(c.id, categoryMap);
       return { ...c, fullPath };
     });
-  }, [categories]);
+  }, [categories, categoryMap]);
 
   // Filtered items based on search query
   const filteredItems = useMemo(() => {

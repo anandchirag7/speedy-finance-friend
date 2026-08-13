@@ -1325,13 +1325,36 @@ function MerchantAvatar({ name, color }: { name: string; color?: string | null }
 function CategoryInline({
   category, categories, onPatch,
 }: { txnId: string; category: Txn["category"]; categories: any[]; onPatch: (p: any) => void }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <CategorySelectPopover
-      categories={categories}
-      value={category?.id ?? null}
-      onChange={(v) => onPatch({ category_id: v })}
-      className="h-7 w-full border-0 bg-transparent hover:bg-muted font-normal text-xs"
-    />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="inline-flex max-w-full items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-xs hover:bg-muted">
+          {category ? (
+            <>
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: category.color ?? "oklch(0.9 0.02 95)" }} />
+              <span className="truncate">{category.name}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">Uncategorized</span>
+          )}
+          <ChevronDown className="h-3 w-3 opacity-40" />
+        </button>
+      </PopoverTrigger>
+      {open && (
+        <PopoverContent className="w-[300px] p-0" align="start">
+          <CategorySelectPopover
+            categories={categories}
+            value={category?.id ?? null}
+            onChange={(v) => {
+              onPatch({ category_id: v });
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      )}
+    </Popover>
   );
 }
 

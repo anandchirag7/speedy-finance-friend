@@ -160,21 +160,15 @@ export const listCategoriesForPayees = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const householdId = await getHouseholdId(context);
-    const PAGE = 1000;
-    const cats: any[] = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await context.supabase
-        .from("categories")
-        .select("*")
-        .eq("household_id", householdId)
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (error) throw error;
-      cats.push(...(data ?? []));
-      if (!data || data.length < PAGE) break;
-    }
-    return cats;
+    const { data, error } = await context.supabase
+      .from("categories")
+      .select("*")
+      .eq("household_id", householdId)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true })
+      .limit(2000);
+    if (error) throw error;
+    return data ?? [];
   });
 
 export const listAccountsForPayees = createServerFn({ method: "GET" })
