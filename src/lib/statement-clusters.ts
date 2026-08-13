@@ -28,6 +28,7 @@ export type ClusterTxn = {
   amount: number;
   type: "income" | "expense" | "transfer";
   pattern: string;
+  transfer_account_id?: string | null;
 };
 
 export type Member = {
@@ -55,6 +56,7 @@ export type Cluster = {
   existingPayeeId: string | null;
   isTransfer: boolean;
   pendingAi: boolean;
+  transfer_account_id?: string | null;
 };
 
 // ---------------------------------------------------------------- similarity

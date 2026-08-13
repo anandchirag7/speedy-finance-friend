@@ -604,6 +604,7 @@ const bulkInput = z.object({
         merchant: z.string().max(200).nullable().optional(),
         note: z.string().max(500).optional().nullable(),
         split_parent_id: z.string().uuid().nullable().optional(),
+        transfer_account_id: z.string().uuid().nullable().optional(),
       }),
     )
     .min(1)
@@ -828,6 +829,7 @@ export const bulkInsertTransactions = createServerFn({ method: "POST" })
             tags: isEmiParent ? ["EMI"] : [],
             import_batch_id: batchId,
             split_parent_id: t.split_parent_id ?? null,
+            transfer_account_id: t.transfer_account_id ?? null,
           });
         }
       });

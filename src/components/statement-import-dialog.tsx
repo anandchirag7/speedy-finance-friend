@@ -651,6 +651,7 @@ export function StatementImportDialog() {
         type: c?.type ?? t.type,
         payee: c?.name ?? "",
         category_id: c?.category_id ?? null,
+        transfer_account_id: c?.transfer_account_id ?? null,
         source: c?.pendingAi ? "pending" : (c?.source ?? "cluster"),
         confidence: c?.confidence ?? 0.5,
         include: !ignored,
@@ -903,6 +904,7 @@ export function StatementImportDialog() {
             category_id: r.category_id,
             merchant: r.payee || null,
             note: r.description.slice(0, 500),
+            transfer_account_id: r.transfer_account_id ?? null,
           })),
         },
         signal: controller.signal,
@@ -1142,6 +1144,8 @@ export function StatementImportDialog() {
               clusters={clusters}
               setClusters={setClusters}
               categories={categories}
+              accounts={accounts as Array<{ id: string; name: string }>}
+              currentAccountId={accountId}
               aiRemaining={aiRemaining}
               polishing={polishing}
               onPolish={onPolish}

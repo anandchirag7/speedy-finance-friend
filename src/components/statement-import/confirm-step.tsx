@@ -130,6 +130,8 @@ function ClusterCard({
   cluster,
   clusters,
   categories,
+  accounts,
+  currentAccountId,
   selected,
   expanded,
   onToggleSelect,
@@ -143,6 +145,8 @@ function ClusterCard({
   cluster: Cluster;
   clusters: Cluster[];
   categories: Category[];
+  accounts?: Array<{ id: string; name: string }>;
+  currentAccountId?: string;
   selected: boolean;
   expanded: boolean;
   onToggleSelect: () => void;
@@ -255,28 +259,53 @@ function ClusterCard({
             ))}
           </div>
 
-          <div className="grid gap-1.5 sm:grid-cols-[minmax(0,220px)_minmax(0,120px)_auto]">
-            <CategorySelect
-              categories={categories}
-              value={cluster.category_id}
-              onChange={(v) => onPatch({ category_id: v })}
-              onCategoryCreated={onCategoryCreated}
-            />
-            <Select
-              value={cluster.type}
-              onValueChange={(v) =>
-                onPatch({ type: v as Cluster["type"], isTransfer: v === "transfer" })
-              }
-            >
-              <SelectTrigger className="h-7 text-xs" aria-label="Transaction type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="expense">Expense</SelectItem>
-                <SelectItem value="income">Income</SelectItem>
-                <SelectItem value="transfer">Transfer</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="w-[200px]">
+              <CategorySelect
+                categories={categories}
+                value={cluster.category_id}
+                onChange={(v) => onPatch({ category_id: v })}
+                onCategoryCreated={onCategoryCreated}
+              />
+            </div>
+            <div className="w-[110px]">
+              <Select
+                value={cluster.type}
+                onValueChange={(v) =>
+                  onPatch({ type: v as Cluster["type"], isTransfer: v === "transfer" })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs" aria-label="Transaction type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="expense">Expense</SelectItem>
+                  <SelectItem value="income">Income</SelectItem>
+                  <SelectItem value="transfer">Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {cluster.type === "transfer" && (
+              <div className="w-[170px]">
+                <Select
+                  value={cluster.transfer_account_id ?? ""}
+                  onValueChange={(v) => onPatch({ transfer_account_id: v || null })}
+                >
+                  <SelectTrigger className="h-7 text-xs" aria-label="Transfer counterparty account">
+                    <SelectValue placeholder="Counterparty account…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts
+                      ?.filter((a) => a.id !== currentAccountId)
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-1">
               <Button
                 size="sm"
@@ -368,6 +397,8 @@ export function ConfirmStep({
   clusters,
   setClusters,
   categories,
+  accounts,
+  currentAccountId,
   aiRemaining,
   polishing,
   onPolish,
@@ -379,6 +410,8 @@ export function ConfirmStep({
   clusters: Cluster[];
   setClusters: (next: Cluster[]) => void;
   categories: Category[];
+  accounts?: Array<{ id: string; name: string }>;
+  currentAccountId?: string;
   aiRemaining: number;
   polishing: boolean;
   onPolish: () => void;
@@ -668,6 +701,8 @@ export function ConfirmStep({
                         cluster={c}
                         clusters={clusters}
                         categories={categories}
+                        accounts={accounts}
+                        currentAccountId={currentAccountId}
                         selected={selectedIds.includes(c.id)}
                         expanded={!!expanded[c.id]}
                         onToggleSelect={() =>
@@ -719,6 +754,8 @@ export function ConfirmStep({
                       cluster={c}
                       clusters={clusters}
                       categories={categories}
+                      accounts={accounts}
+                      currentAccountId={currentAccountId}
                       selected={selectedIds.includes(c.id)}
                       expanded={!!expanded[c.id]}
                       onToggleSelect={() =>

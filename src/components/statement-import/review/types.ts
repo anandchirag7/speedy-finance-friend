@@ -14,6 +14,7 @@ export type ReviewRow = {
   confidence: number;
   include: boolean;
   duplicate: boolean;
+  transfer_account_id?: string | null;
   /** Why this row was flagged as a duplicate (match keys + confidence). */
   dup?: DuplicateEvidence;
 };
