@@ -904,29 +904,86 @@ function DateRangePicker({
   );
 }
 
+/* -------- Searchable category list (bulk + inline pickers) -------- */
+type CatOption = { id: string; name: string; kind?: string; color?: string | null };
+
+function CategorySearchList({
+  categories, onPick, includeNone,
+}: { categories: CatOption[]; onPick: (id: string | null) => void; includeNone?: boolean }) {
+  const [query, setQuery] = useState("");
+  const options = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q ? categories.filter((c) => c.name.toLowerCase().includes(q)) : categories;
+    return list.slice(0, 80);
+  }, [query, categories]);
+
+  return (
+    <Command shouldFilter={false}>
+      <CommandInput value={query} onValueChange={setQuery} placeholder="Search category…" />
+      <CommandList className="max-h-64">
+        <CommandEmpty>No matches.</CommandEmpty>
+        <CommandGroup>
+          {includeNone && (
+            <CommandItem value="__none" onSelect={() => onPick(null)}>Uncategorized</CommandItem>
+          )}
+          {options.map((c) => (
+            <CommandItem key={c.id} value={c.id} onSelect={() => onPick(c.id)}>
+              <span className="mr-2 h-2 w-2 shrink-0 rounded-full" style={{ background: c.color ?? "oklch(0.9 0.02 95)" }} />
+              <span className="truncate">{c.name}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+    </Command>
+  );
+}
+
 /* -------- Multi-picker -------- */
 function MultiPicker({
   label, options, value, onChange,
 }: { label: string; options: { id: string; name: string; kind?: string }[]; value: string[]; onChange: (v: string[]) => void }) {
+  const [query, setQuery] = useState("");
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options;
+    return list.slice(0, 200);
+  }, [query, options]);
+
   return (
-    <div className="max-h-56 space-y-0.5 overflow-auto rounded-md border p-1.5">
-      {options.length === 0 && <div className="p-2 text-xs text-muted-foreground">{label}</div>}
-      {options.map((o) => (
-        <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted/60">
-          <Checkbox
-            checked={value.includes(o.id)}
-            onCheckedChange={(v) => {
-              if (v) onChange([...value, o.id]);
-              else onChange(value.filter((x) => x !== o.id));
-            }}
-          />
-          <span className="flex-1 text-sm">{o.name}</span>
-          {o.kind && <span className="text-[10px] uppercase text-muted-foreground">{o.kind}</span>}
-        </label>
-      ))}
+    <div className="rounded-md border">
+      {options.length > 12 && (
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search…"
+          className="h-8 rounded-b-none border-0 border-b text-xs focus-visible:ring-0"
+        />
+      )}
+      <div className="max-h-56 space-y-0.5 overflow-auto p-1.5">
+        {shown.length === 0 && <div className="p-2 text-xs text-muted-foreground">{label}</div>}
+        {shown.map((o) => (
+          <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted/60">
+            <Checkbox
+              checked={value.includes(o.id)}
+              onCheckedChange={(v) => {
+                if (v) onChange([...value, o.id]);
+                else onChange(value.filter((x) => x !== o.id));
+              }}
+            />
+            <span className="flex-1 text-sm">{o.name}</span>
+            {o.kind && <span className="text-[10px] uppercase text-muted-foreground">{o.kind}</span>}
+          </label>
+        ))}
+        {options.length > shown.length && (
+          <div className="px-2 py-1 text-[10px] text-muted-foreground">
+            Showing {shown.length} of {options.length} — refine your search.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
 
 function TriToggle({ label, value, onChange }: { label: string; value: "any" | "yes" | "no"; onChange: (v: any) => void }) {
   return (
