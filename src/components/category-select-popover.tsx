@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronRight, Plus, Search, FolderTree } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -63,6 +64,7 @@ export function CategorySelectPopover({
   const [newCatParentId, setNewCatParentId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
+  const qc = useQueryClient();
   const upsertFn = useServerFn(upsertCategory);
 
   const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
@@ -104,6 +106,7 @@ export function CategorySelectPopover({
         kind: created.kind,
         parent_id: created.parent_id,
       };
+      qc.invalidateQueries({ queryKey: ["categories"] });
       if (onCategoryCreated) onCategoryCreated(newObj);
       onChange(created.id);
       setAddDialogOpen(false);
