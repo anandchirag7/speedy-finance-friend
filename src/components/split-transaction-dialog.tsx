@@ -205,15 +205,15 @@ export function SplitTransactionDialog({
           className={cn(
             "rounded-md border p-2.5 flex items-center justify-between text-xs transition-colors",
             isBalanced
-              ? "bg-success/10 border-success/30 text-success-foreground"
-              : "bg-warning/10 border-warning/30 text-warning-foreground"
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+              : "bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300"
           )}
         >
           <div className="flex items-center gap-2">
             {isBalanced ? (
-              <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             ) : (
-              <AlertCircle className="h-4 w-4 text-warning shrink-0" />
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
             )}
             <div>
               <span className="font-medium">
