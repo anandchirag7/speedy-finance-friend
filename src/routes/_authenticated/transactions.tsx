@@ -562,7 +562,7 @@ function TransactionsWorkspace() {
                   <Label>Category</Label>
                   <MultiPicker
                     label="Any category"
-                    options={(categories as any[]).map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
+                    options={catOptions}
                     value={selectedCategories}
                     onChange={setSelectedCategories}
                   />
