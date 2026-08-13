@@ -14,6 +14,7 @@ import {
   Grid,
   Layers,
   Zap,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,11 +63,12 @@ type Category = { id: string; name: string; parent_id?: string | null };
 const money = (n: number) =>
   n.toLocaleString(undefined, { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
-type FilterKey = "all" | "review" | "ai" | "existing" | "new" | "ignored";
+type FilterKey = "all" | "review" | "approved" | "ai" | "existing" | "new" | "ignored";
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: "all", label: "All" },
   { key: "review", label: "Needs review" },
+  { key: "approved", label: "Approved" },
   { key: "ai", label: "AI suggested" },
   { key: "existing", label: "Existing" },
   { key: "new", label: "New" },
@@ -307,18 +309,31 @@ function ClusterCard({
               </div>
             )}
             <div className="flex flex-wrap items-center gap-1">
-              <Button
-                size="sm"
-                variant={cluster.status === "approved" ? "default" : "outline"}
-                className="h-7 px-2 text-xs"
-                onClick={() => {
-                  onPatch({ status: "approved", pendingAi: false });
-                  onSaveToBackend?.(cluster);
-                }}
-              >
-                <Check className="mr-1 h-3 w-3" aria-hidden />
-                {cluster.status === "approved" ? "Approved" : "Approve & Save"}
-              </Button>
+              {cluster.status === "approved" ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                  onClick={() => onPatch({ status: "review" })}
+                  title="Move back to Needs Review pane to edit name, type, or category"
+                >
+                  <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
+                  Move to Review
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => {
+                    onPatch({ status: "approved", pendingAi: false });
+                    onSaveToBackend?.(cluster);
+                  }}
+                >
+                  <Check className="mr-1 h-3 w-3" aria-hidden />
+                  Approve & Save
+                </Button>
+              )}
 
               {/* Merge Cluster Dropdown */}
               <Select onValueChange={(targetId) => onMergeWith(targetId)}>
@@ -452,11 +467,12 @@ export function ConfirmStep({
     return clusters
       .filter((c) => {
         if (filter === "review" && c.status !== "review") return false;
+        if (filter === "approved" && c.status !== "approved") return false;
         if (filter === "ai" && c.source !== "ai") return false;
         if (filter === "existing" && !c.isExisting) return false;
         if (filter === "new" && c.isExisting) return false;
         if (filter === "ignored" && c.status !== "ignored") return false;
-        if (filter !== "ignored" && c.status === "ignored") return false;
+        if (filter !== "ignored" && filter !== "approved" && c.status === "ignored") return false;
         if (!q) return true;
         return (
           c.name.toLowerCase().includes(q) ||
@@ -549,6 +565,13 @@ export function ConfirmStep({
           active={filter === "review"}
           onClick={() => setFilter("review")}
         />
+        <StatTile
+          label="Approved"
+          value={stats.approved}
+          tone="text-emerald-600 dark:text-emerald-400"
+          active={filter === "approved"}
+          onClick={() => setFilter("approved")}
+        />
         <StatTile label="New payees" value={stats.newPayees} active={filter === "new"} onClick={() => setFilter("new")} />
         <StatTile label="Ignored" value={stats.ignored} active={filter === "ignored"} onClick={() => setFilter("ignored")} />
       </div>
@@ -628,6 +651,14 @@ export function ConfirmStep({
           <span className="text-[11px] font-medium">{selectedIds.length} selected</span>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => bulk({ status: "approved" })}>
             <Check className="mr-1 h-3 w-3" aria-hidden /> Approve
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+            onClick={() => bulk({ status: "review" })}
+          >
+            <RotateCcw className="mr-1 h-3 w-3" aria-hidden /> Move to Review
           </Button>
           <Button
             size="sm"
@@ -908,6 +939,7 @@ export function ConfirmStep({
         clustersToApprove={highConfUnapproved}
         categories={categories}
         onCategoryCreated={onCategoryCreated}
+        onMoveToReview={(id) => patch(id, { status: "review" })}
         onConfirmApprove={(approvedItems) => {
           const approvedMap = new Map(approvedItems.map((item) => [item.id, item.category_id]));
           setClusters(
@@ -934,6 +966,7 @@ function HighConfApprovalModal({
   clustersToApprove,
   categories,
   onConfirmApprove,
+  onMoveToReview,
   onCategoryCreated,
 }: {
   open: boolean;
@@ -941,6 +974,7 @@ function HighConfApprovalModal({
   clustersToApprove: Cluster[];
   categories: CategoryItem[];
   onConfirmApprove: (approvedClusters: Array<{ id: string; category_id: string | null }>) => void;
+  onMoveToReview?: (id: string) => void;
   onCategoryCreated?: (c: CategoryItem) => void;
 }) {
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
@@ -1115,6 +1149,20 @@ function HighConfApprovalModal({
                     <p className="font-semibold tabular-nums">{money(total)}</p>
                     <p className="text-[10px] text-muted-foreground">{count} txns</p>
                   </div>
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 shrink-0"
+                    onClick={() => {
+                      onMoveToReview?.(c.id);
+                      toggleExclude(c.id);
+                    }}
+                    title="Move back to Needs Review pane for manual editing"
+                  >
+                    <RotateCcw className="mr-1 h-3 w-3" aria-hidden />
+                    Move to Review
+                  </Button>
                 </div>
               );
             })}

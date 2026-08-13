@@ -374,6 +374,7 @@ export type ClusterStats = {
   autoMatched: number;
   aiSuggested: number;
   needsReview: number;
+  approved: number;
   existing: number;
   newPayees: number;
   ignored: number;
@@ -386,6 +387,7 @@ export function summarize(clusters: Cluster[]): ClusterStats {
     autoMatched: 0,
     aiSuggested: 0,
     needsReview: 0,
+    approved: 0,
     existing: 0,
     newPayees: 0,
     ignored: 0,
@@ -393,6 +395,7 @@ export function summarize(clusters: Cluster[]): ClusterStats {
   for (const c of clusters) {
     stats.transactions += clusterTxnCount(c);
     if (c.status === "ignored") stats.ignored++;
+    else if (c.status === "approved") stats.approved++;
     else if (c.status === "review") stats.needsReview++;
     else if (c.source === "ai") stats.aiSuggested++;
     else stats.autoMatched++;
