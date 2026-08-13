@@ -1425,25 +1425,16 @@ function CategoryInline({
           <ChevronDown className="h-3 w-3 opacity-40" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search category…" />
-          <CommandList className="max-h-64">
-            <CommandEmpty>No matches.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem onSelect={() => { onPatch({ category_id: null }); setOpen(false); }}>
-                Uncategorized
-              </CommandItem>
-              {categories.map((c) => (
-                <CommandItem key={c.id} onSelect={() => { onPatch({ category_id: c.id }); setOpen(false); }}>
-                  <span className="mr-2 h-2 w-2 rounded-full" style={{ background: c.color ?? "oklch(0.9 0.02 95)" }} />
-                  {c.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+      <PopoverContent className="w-72 p-0" align="start">
+        {open && (
+          <CategorySearchList
+            categories={categories as CatOption[]}
+            includeNone
+            onPick={(id) => { onPatch({ category_id: id }); setOpen(false); }}
+          />
+        )}
       </PopoverContent>
+
     </Popover>
   );
 }
