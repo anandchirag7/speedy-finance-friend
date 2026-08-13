@@ -45,11 +45,15 @@ export function CategorySelectPopover({
   value,
   onChange,
   onCategoryCreated,
+  className,
+  placeholder,
 }: {
   categories: CategoryItem[];
   value: string | null;
   onChange: (v: string | null) => void;
   onCategoryCreated?: (newCategory: CategoryItem) => void;
+  className?: string;
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -120,9 +124,9 @@ export function CategorySelectPopover({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="h-7 w-full justify-between px-2 text-xs font-normal text-left truncate"
+            className={cn("h-7 w-full justify-between px-2 text-xs font-normal text-left truncate", className)}
           >
-            <span className="truncate">{selectedLabel}</span>
+            <span className="truncate">{value ? selectedLabel : (placeholder ?? selectedLabel)}</span>
             <ChevronRight className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50 rotate-90" />
           </Button>
         </PopoverTrigger>

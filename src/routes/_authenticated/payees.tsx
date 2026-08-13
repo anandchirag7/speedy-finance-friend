@@ -32,6 +32,7 @@ import {
   TrendingDown,
   Building2,
 } from "lucide-react";
+import { CategorySelectPopover } from "@/components/category-select-popover";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -921,18 +922,12 @@ function DetailsPanel({
               </Select>
             </Field>
             <Field label="Category">
-              <Select
-                value={payee.category_id ?? "none"}
-                onValueChange={(v) => onPatch({ category_id: v === "none" ? null : v })}
-              >
-                <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                <SelectContent className="max-h-72">
-                  <SelectItem value="none">— None —</SelectItem>
-                  {cats.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CategorySelectPopover
+                categories={cats}
+                value={payee.category_id}
+                onChange={(v) => onPatch({ category_id: v })}
+                className="h-9 w-full bg-background"
+              />
             </Field>
             <Field label="Default amount">
               <Input
@@ -1349,18 +1344,12 @@ function PayeeFormDialog({
                 </Select>
               </Field>
               <Field label="Category">
-                <Select
-                  value={d.category_id ?? "none"}
-                  onValueChange={(v) => set({ category_id: v === "none" ? null : v })}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    <SelectItem value="none">— None —</SelectItem>
-                    {cats.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CategorySelectPopover
+                  categories={cats}
+                  value={d.category_id}
+                  onChange={(v) => set({ category_id: v })}
+                  className="h-9 w-full bg-background"
+                />
               </Field>
               <Field label="Default amount">
                 <Input
@@ -1732,18 +1721,12 @@ function RuleRow({
           </Field>
         ) : (
           <Field label="Category">
-            <Select
-              value={v.category_id ?? "none"}
-              onValueChange={(val) => setImmediate({ category_id: val === "none" ? null : val })}
-            >
-              <SelectTrigger className="h-8"><SelectValue placeholder="Select category" /></SelectTrigger>
-              <SelectContent className="max-h-72">
-                <SelectItem value="none">— None —</SelectItem>
-                {relevantCats.map((c: any) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CategorySelectPopover
+              categories={relevantCats}
+              value={v.category_id}
+              onChange={(val) => setImmediate({ category_id: val })}
+              className="h-8 w-full bg-background"
+            />
           </Field>
         )}
 

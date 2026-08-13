@@ -29,6 +29,7 @@ import {
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
+import { CategorySelectPopover } from "@/components/category-select-popover";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
@@ -695,19 +696,17 @@ function TransactionsWorkspace() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{selected.size} selected</span>
               <span className="mx-2 h-4 w-px bg-border" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline">Categorize</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-72 overflow-auto">
-                  {(categories as any[]).map((c) => (
-                    <DropdownMenuItem
-                      key={c.id}
-                      onClick={() => bulkPatchMut.mutate({ ids: Array.from(selected), patch: { category_id: c.id } })}
-                    >{c.name}</DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="w-[180px]">
+                <CategorySelectPopover
+                  categories={categories}
+                  value={null}
+                  onChange={(v) => {
+                    bulkPatchMut.mutate({ ids: Array.from(selected), patch: { category_id: v } });
+                  }}
+                  placeholder="Categorize..."
+                  className="h-8 text-xs bg-background"
+                />
+              </div>
               <Button size="sm" variant="outline" onClick={() =>
                 bulkPatchMut.mutate({ ids: Array.from(selected), patch: { is_reviewed: true } })
               }><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />Mark reviewed</Button>
@@ -1326,42 +1325,13 @@ function MerchantAvatar({ name, color }: { name: string; color?: string | null }
 function CategoryInline({
   category, categories, onPatch,
 }: { txnId: string; category: Txn["category"]; categories: any[]; onPatch: (p: any) => void }) {
-  const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button className="inline-flex max-w-full items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-xs hover:bg-muted">
-          {category ? (
-            <>
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: category.color ?? "oklch(0.9 0.02 95)" }} />
-              <span className="truncate">{category.name}</span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">Uncategorized</span>
-          )}
-          <ChevronDown className="h-3 w-3 opacity-40" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search category…" />
-          <CommandList className="max-h-64">
-            <CommandEmpty>No matches.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem onSelect={() => { onPatch({ category_id: null }); setOpen(false); }}>
-                Uncategorized
-              </CommandItem>
-              {categories.map((c) => (
-                <CommandItem key={c.id} onSelect={() => { onPatch({ category_id: c.id }); setOpen(false); }}>
-                  <span className="mr-2 h-2 w-2 rounded-full" style={{ background: c.color ?? "oklch(0.9 0.02 95)" }} />
-                  {c.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <CategorySelectPopover
+      categories={categories}
+      value={category?.id ?? null}
+      onChange={(v) => onPatch({ category_id: v })}
+      className="h-7 w-full border-0 bg-transparent hover:bg-muted font-normal text-xs"
+    />
   );
 }
 
