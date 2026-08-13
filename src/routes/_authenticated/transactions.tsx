@@ -722,19 +722,18 @@ function TransactionsWorkspace() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{selected.size} selected</span>
               <span className="mx-2 h-4 w-px bg-border" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              <Popover>
+                <PopoverTrigger asChild>
                   <Button size="sm" variant="outline">Categorize</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-72 overflow-auto">
-                  {(categories as any[]).map((c) => (
-                    <DropdownMenuItem
-                      key={c.id}
-                      onClick={() => bulkPatchMut.mutate({ ids: Array.from(selected), patch: { category_id: c.id } })}
-                    >{c.name}</DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-72 p-0">
+                  <CategorySearchList
+                    categories={catOptions}
+                    onPick={(id) => bulkPatchMut.mutate({ ids: Array.from(selected), patch: { category_id: id } })}
+                  />
+                </PopoverContent>
+              </Popover>
+
               <Button size="sm" variant="outline" onClick={() =>
                 bulkPatchMut.mutate({ ids: Array.from(selected), patch: { is_reviewed: true } })
               }><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />Mark reviewed</Button>
