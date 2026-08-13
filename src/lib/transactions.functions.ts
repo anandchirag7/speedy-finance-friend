@@ -165,6 +165,78 @@ export const bulkDeleteTransactions = createServerFn({ method: "POST" })
     return { ok: true, count: data.ids.length };
   });
 
+// ---------- split transaction ----------
+const splitInputSchema = z.object({
+  transactionId: z.string().uuid(),
+  splits: z.array(
+    z.object({
+      category_id: z.string().uuid().nullable().optional(),
+      amount: z.number().positive(),
+      memo: z.string().max(500).nullable().optional(),
+      merchant: z.string().max(200).nullable().optional(),
+    }),
+  ).min(1),
+});
+
+export const saveTransactionSplits = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => splitInputSchema.parse(d))
+  .handler(async ({ context, data }) => {
+    const householdId = await getHouseholdId(context);
+
+    // 1. Fetch parent transaction details
+    const { data: parentTxn, error: parentErr } = await context.supabase
+      .from("transactions")
+      .select("id, account_id, txn_date, type, merchant, cleared_status, is_reviewed")
+      .eq("id", data.transactionId)
+      .eq("household_id", householdId)
+      .single();
+
+    if (parentErr || !parentTxn) throw new Error("Parent transaction not found");
+
+    // 2. Delete existing child split rows for this parent
+    const { error: delErr } = await context.supabase
+      .from("transactions")
+      .delete()
+      .eq("split_parent_id", data.transactionId)
+      .eq("household_id", householdId);
+
+    if (delErr) throw delErr;
+
+    // 3. Prepare child split rows to insert
+    const childRows = data.splits.map((split) => ({
+      household_id: householdId,
+      account_id: parentTxn.account_id,
+      split_parent_id: data.transactionId,
+      txn_date: parentTxn.txn_date,
+      type: parentTxn.type,
+      merchant: split.merchant ?? parentTxn.merchant,
+      category_id: split.category_id ?? null,
+      amount: split.amount,
+      memo: split.memo ?? null,
+      cleared_status: parentTxn.cleared_status,
+      is_reviewed: parentTxn.is_reviewed,
+    }));
+
+    const { data: inserted, error: insertErr } = await context.supabase
+      .from("transactions")
+      .insert(childRows)
+      .select();
+
+    if (insertErr) throw insertErr;
+
+    // 4. Log activity
+    await context.supabase.from("transaction_activity").insert({
+      household_id: householdId,
+      transaction_id: data.transactionId,
+      actor_id: context.userId,
+      action: "split",
+      details: { split_count: data.splits.length, splits: data.splits },
+    });
+
+    return { ok: true, splits: inserted };
+  });
+
 // ---------- transaction detail (comments, attachments, activity) ----------
 export const getTransactionDetail = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

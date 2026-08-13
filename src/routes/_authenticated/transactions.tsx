@@ -30,6 +30,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { CategorySelectPopover, getCategoryHierarchyLabel } from "@/components/category-select-popover";
+import { SplitTransactionDialog } from "@/components/split-transaction-dialog";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
@@ -201,7 +202,23 @@ function TransactionsWorkspace() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  const [splitTxnTarget, setSplitTxnTarget] = useState<Txn | null>(null);
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+
   const list = (txns as Txn[]) ?? [];
+
+  const childSplitsMap = useMemo(() => {
+    const map = new Map<string, Txn[]>();
+    for (const t of list) {
+      if ((t as any).split_parent_id) {
+        const pid = (t as any).split_parent_id as string;
+        const arr = map.get(pid) ?? [];
+        arr.push(t);
+        map.set(pid, arr);
+      }
+    }
+    return map;
+  }, [list]);
 
   const sorted = useMemo(() => {
     const arr = [...list];
@@ -215,6 +232,10 @@ function TransactionsWorkspace() {
     });
     return arr;
   }, [list, sortKey, sortDir]);
+
+  const parentTxnsSorted = useMemo(() => {
+    return sorted.filter((t: any) => !t.split_parent_id);
+  }, [sorted]);
 
   // ---- analytics
   const analytics = useMemo(() => computeAnalytics(list, dimension), [list, dimension]);
@@ -494,14 +515,14 @@ function TransactionsWorkspace() {
                       </td>
                     </tr>
                   ))
-                ) : sorted.length === 0 ? (
+                ) : parentTxnsSorted.length === 0 ? (
                   <tr>
                     <td colSpan={visibleCols.size + 2}>
                       <EmptyGrid onAdd={() => setAddOpen(true)} />
                     </td>
                   </tr>
                 ) : (
-                  sorted.map((t) => (
+                  parentTxnsSorted.map((t) => (
                     <TxnRow
                       key={t.id}
                       txn={t}
@@ -512,6 +533,8 @@ function TransactionsWorkspace() {
                       expanded={expanded.has(t.id)}
                       categories={categories as any[]}
                       categoryHierarchyMap={categoryHierarchyMap}
+                      childSplits={childSplitsMap.get(t.id)}
+                      onSplit={() => { setSplitTxnTarget(t); setSplitDialogOpen(true); }}
                       onSelect={(v) => {
                         const next = new Set(selected);
                         if (v) next.add(t.id); else next.delete(t.id);
@@ -747,6 +770,14 @@ function TransactionsWorkspace() {
         ><Plus className="h-6 w-6" /></Button>
 
         <FastEntryDialog open={addOpen} onOpenChange={setAddOpen} hideTrigger />
+        <SplitTransactionDialog
+          open={splitDialogOpen}
+          onOpenChange={setSplitDialogOpen}
+          transaction={splitTxnTarget}
+          existingSplits={splitTxnTarget ? childSplitsMap.get(splitTxnTarget.id) : undefined}
+          categories={categories as any[]}
+          onSuccess={() => qc.invalidateQueries({ queryKey: ["txn-rich"] })}
+        />
       </div>
     </div>
   );
@@ -1157,11 +1188,13 @@ function BreakdownList({
 
 /* -------- Row -------- */
 function TxnRow({
-  txn, rowH, cols, colWidths, selected, expanded, categories, categoryHierarchyMap, onSelect, onToggleExpand, onOpenDetail, onPatch, onDelete,
+  txn, rowH, cols, colWidths, selected, expanded, categories, categoryHierarchyMap, childSplits, onSplit, onSelect, onToggleExpand, onOpenDetail, onPatch, onDelete,
 }: {
   txn: Txn; rowH: string; cols: ColKey[]; colWidths: Record<string, number>;
   selected: boolean; expanded: boolean; categories: any[];
   categoryHierarchyMap?: Map<string, string>;
+  childSplits?: Txn[];
+  onSplit?: () => void;
   onSelect: (v: boolean) => void; onToggleExpand: () => void;
   onOpenDetail: () => void; onPatch: (patch: any) => void; onDelete: () => void;
 }) {
@@ -1171,6 +1204,8 @@ function TxnRow({
   const arrow =
     txn.type === "income" ? ArrowUpRight : txn.type === "expense" ? ArrowDownRight : ArrowLeftRight;
   const Arrow = arrow;
+
+  const hasSplits = childSplits && childSplits.length > 0;
 
   return (
     <>
@@ -1211,7 +1246,14 @@ function TxnRow({
                   <div className="flex items-center gap-2 min-w-0">
                     <MerchantAvatar name={txn.merchant ?? txn.category?.name ?? "?"} color={txn.category?.color} />
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{txn.merchant ?? txn.note ?? (txn.type === "transfer" ? "Transfer" : "Uncategorized")}</div>
+                      <div className="truncate font-medium flex items-center gap-1.5">
+                        {txn.merchant ?? txn.note ?? (txn.type === "transfer" ? "Transfer" : "Uncategorized")}
+                        {hasSplits && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 border-primary/30 text-primary font-normal">
+                            Split ({childSplits.length})
+                          </Badge>
+                        )}
+                      </div>
                       {txn.memo && <div className="truncate text-[11px] text-muted-foreground">{txn.memo}</div>}
                     </div>
                   </div>
@@ -1219,13 +1261,24 @@ function TxnRow({
               );
               if (k === "category") return (
                 <td key={k} style={{ width: w }} className="px-3 align-middle">
-                  <CategoryInline
-                    txnId={txn.id}
-                    category={txn.category}
-                    categories={categories}
-                    categoryHierarchyMap={categoryHierarchyMap}
-                    onPatch={onPatch}
-                  />
+                  {hasSplits ? (
+                    <button
+                      type="button"
+                      onClick={onSplit}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                    >
+                      <Split className="h-3 w-3" />
+                      Split ({childSplits.length} categories)
+                    </button>
+                  ) : (
+                    <CategoryInline
+                      txnId={txn.id}
+                      category={txn.category}
+                      categories={categories}
+                      categoryHierarchyMap={categoryHierarchyMap}
+                      onPatch={onPatch}
+                    />
+                  )}
                 </td>
               );
               if (k === "account") return (
@@ -1271,6 +1324,9 @@ function TxnRow({
             })}
             <td className="px-2 align-middle">
               <div className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <IconBtn label="Split transaction" onClick={() => onSplit && onSplit()}>
+                  <Split className="h-3.5 w-3.5 text-primary" />
+                </IconBtn>
                 <IconBtn label="Flag" onClick={() => onPatch({ is_flagged: !txn.is_flagged })}><Flag className="h-3.5 w-3.5" /></IconBtn>
                 <IconBtn label="Favorite" onClick={() => onPatch({ is_favorite: !txn.is_favorite })}>
                   <Star className={cn("h-3.5 w-3.5", txn.is_favorite && "fill-warning text-warning")} />
@@ -1281,6 +1337,10 @@ function TxnRow({
           </tr>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-52">
+          <ContextMenuItem onClick={onSplit}>
+            <Split className="mr-2 h-4 w-4 text-primary" />
+            {hasSplits ? "Edit split categories..." : "Split transaction..."}
+          </ContextMenuItem>
           <ContextMenuItem onClick={onOpenDetail}>Open details</ContextMenuItem>
           <ContextMenuItem onClick={() => onPatch({ is_reviewed: !txn.is_reviewed })}>
             {txn.is_reviewed ? "Mark as unreviewed" : "Mark as reviewed"}
@@ -1298,7 +1358,14 @@ function TxnRow({
       {expanded && (
         <tr>
           <td colSpan={cols.length + 2} className="border-b bg-muted/20 p-0">
-            <InlineExpand txn={txn} onOpenDetail={onOpenDetail} onPatch={onPatch} />
+            <InlineExpand
+              txn={txn}
+              childSplits={childSplits}
+              categoryHierarchyMap={categoryHierarchyMap}
+              onSplit={onSplit}
+              onOpenDetail={onOpenDetail}
+              onPatch={onPatch}
+            />
           </td>
         </tr>
       )}
@@ -1386,13 +1453,59 @@ function CategoryInline({
 }
 
 /* -------- Inline expand -------- */
-function InlineExpand({ txn, onOpenDetail, onPatch }: { txn: Txn; onOpenDetail: () => void; onPatch: (p: any) => void }) {
+function InlineExpand({
+  txn,
+  childSplits,
+  categoryHierarchyMap,
+  onSplit,
+  onOpenDetail,
+  onPatch,
+}: {
+  txn: Txn;
+  childSplits?: Txn[];
+  categoryHierarchyMap?: Map<string, string>;
+  onSplit?: () => void;
+  onOpenDetail: () => void;
+  onPatch: (p: any) => void;
+}) {
   const [note, setNote] = useState(txn.note ?? "");
   const [memo, setMemo] = useState(txn.memo ?? "");
   const [merchant, setMerchant] = useState(txn.merchant ?? "");
   useEffect(() => { setNote(txn.note ?? ""); setMemo(txn.memo ?? ""); setMerchant(txn.merchant ?? ""); }, [txn.id]);
+
+  const hasSplits = childSplits && childSplits.length > 0;
+
   return (
-    <div className="animate-in fade-in-50 slide-in-from-top-1 p-4">
+    <div className="animate-in fade-in-50 slide-in-from-top-1 p-4 space-y-3">
+      {hasSplits && (
+        <div className="rounded-lg border bg-background p-3 space-y-2">
+          <div className="flex items-center justify-between text-xs font-semibold">
+            <span className="flex items-center gap-1.5 text-primary">
+              <Split className="h-4 w-4" /> Category Split Breakdown ({childSplits.length} categories)
+            </span>
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 text-primary font-medium" onClick={onSplit}>
+              Edit Split
+            </Button>
+          </div>
+          <div className="divide-y text-xs">
+            {childSplits.map((cs) => (
+              <div key={cs.id} className="py-1.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: cs.category?.color ?? "oklch(0.9 0.02 95)" }} />
+                  <span className="font-medium text-foreground">
+                    {cs.category ? (categoryHierarchyMap?.get(cs.category.id) ?? cs.category.name) : "Uncategorized"}
+                  </span>
+                  {cs.memo && <span className="text-muted-foreground text-[11px]">({cs.memo})</span>}
+                </div>
+                <div className="font-semibold tabular-nums text-foreground">
+                  ₹{Number(cs.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 md:grid-cols-3">
         <div className="grid gap-1">
           <Label className="text-[11px] uppercase text-muted-foreground">Merchant</Label>
@@ -1436,6 +1549,10 @@ function InlineExpand({ txn, onOpenDetail, onPatch }: { txn: Txn; onOpenDetail: 
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" onClick={onSplit}>
+          <Split className="mr-1.5 h-3.5 w-3.5 text-primary" />
+          {hasSplits ? "Edit category split" : "Split transaction"}
+        </Button>
         <Button size="sm" variant="outline" onClick={() => onPatch({ is_reviewed: !txn.is_reviewed })}>
           <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
           {txn.is_reviewed ? "Reviewed" : "Mark reviewed"}

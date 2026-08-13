@@ -7,8 +7,9 @@ import {
   Download, MoreHorizontal, Plus, Search, Filter, Settings2, Sparkles, Flag,
   CheckCircle2, Star, Trash2, Save, ChevronDown, ChevronRight, CreditCard, Wallet, TrendingUp, TrendingDown,
   Calendar as CalendarIcon, ClipboardCheck, FileSpreadsheet, Printer, Bell,
-  Zap, LayoutGrid, LineChart as LineIcon, BarChart3, PieChart as PieIcon, X,
+  Zap, LayoutGrid, LineChart as LineIcon, BarChart3, PieChart as PieIcon, X, Split,
 } from "lucide-react";
+import { SplitTransactionDialog } from "@/components/split-transaction-dialog";
 import { toast } from "sonner";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -106,6 +107,9 @@ function AccountRegisterPage() {
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => accountsFn() });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesFn() });
   const account = accounts.find((a: any) => a.id === accountId);
+
+  const [splitTxnTarget, setSplitTxnTarget] = useState<any | null>(null);
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
 
   // ---- filters
   const [range, setRange] = useState<Range>("ytd");
@@ -698,6 +702,7 @@ function AccountRegisterPage() {
                         onOpen={() => setDetailId(t.id)}
                         onFlag={() => patchM.mutate({ id: t.id, patch: { is_flagged: !t.is_flagged } })}
                         onReview={() => patchM.mutate({ id: t.id, patch: { is_reviewed: !t.is_reviewed } })}
+                        onSplit={() => { setSplitTxnTarget(t); setSplitDialogOpen(true); }}
                         currency={currency}
                       />
                     ))}
@@ -753,6 +758,14 @@ function AccountRegisterPage() {
         accountName={account?.name}
         onDeleted={() => router.navigate({ to: "/accounts" })}
       />
+      <SplitTransactionDialog
+        open={splitDialogOpen}
+        onOpenChange={setSplitDialogOpen}
+        transaction={splitTxnTarget}
+        existingSplits={splitTxnTarget ? withEmiHierarchy.filter((c: any) => c.split_parent_id === splitTxnTarget.id) : undefined}
+        categories={categories as any[]}
+        onSuccess={() => qc.invalidateQueries({ queryKey: ["account-txns"] })}
+      />
     </div>
   );
 }
@@ -791,10 +804,10 @@ function Sparkline({ values, tone }: { values: number[]; tone: string }) {
 }
 
 /* ============================== register row ============================== */
-function RegisterRow({ t, density, selected, onSelect, onOpen, onFlag, onReview, currency, allTxns = [] }: {
+function RegisterRow({ t, density, selected, onSelect, onOpen, onFlag, onReview, onSplit, currency, allTxns = [] }: {
   t: Txn & { running: number; split_parent_id?: string | null }; density: "compact" | "comfortable" | "spacious";
   selected: boolean; onSelect: (v: boolean) => void; onOpen: () => void;
-  onFlag: () => void; onReview: () => void; currency: string;
+  onFlag: () => void; onReview: () => void; onSplit?: () => void; currency: string;
   allTxns?: (Txn & { running: number; split_parent_id?: string | null })[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -878,6 +891,11 @@ function RegisterRow({ t, density, selected, onSelect, onOpen, onFlag, onReview,
         <td className={cn("px-3 text-right tabular-nums font-medium", pad)}>{formatCurrency(t.running, currency)}</td>
         <td className={cn("pr-2", pad)} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            {onSplit && (
+              <button onClick={onSplit} className="rounded p-1 hover:bg-accent text-primary" title="Split transaction">
+                <Split className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button onClick={onReview} className={cn("rounded p-1 hover:bg-accent", t.is_reviewed ? "text-emerald-600" : "text-muted-foreground/40")} title="Toggle reviewed">
               <CheckCircle2 className="h-3.5 w-3.5" />
             </button>
