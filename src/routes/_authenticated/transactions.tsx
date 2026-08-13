@@ -527,7 +527,7 @@ function TransactionsWorkspace() {
                       colWidths={colWidths}
                       selected={selected.has(t.id)}
                       expanded={expanded.has(t.id)}
-                      categories={categories as any[]}
+                      categories={catOptions}
                       onSelect={(v) => {
                         const next = new Set(selected);
                         if (v) next.add(t.id); else next.delete(t.id);
