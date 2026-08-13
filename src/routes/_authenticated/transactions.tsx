@@ -119,9 +119,36 @@ function TransactionsWorkspace() {
   const categoriesFn = useServerFn(listCategories);
   const viewsFn = useServerFn(listSavedViews);
 
-  const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => accountsFn() });
-  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesFn() });
+  const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => accountsFn(), staleTime: 5 * 60_000 });
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => categoriesFn(),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+  });
   const { data: savedViews = [] } = useQuery({ queryKey: ["txn-views"], queryFn: () => viewsFn() });
+
+  /** Flat, searchable options with full "Parent › Child" paths so picker labels
+   * match the categories table exactly (including deep sub-categories). */
+  const catOptions = useMemo(() => {
+    const list = categories as any[];
+    const byId = new Map(list.map((c) => [c.id, c]));
+    const pathOf = (c: any): string => {
+      const parts: string[] = [];
+      let cur: any = c;
+      let guard = 0;
+      while (cur && guard++ < 10) {
+        parts.unshift(cur.name);
+        cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+      }
+      return parts.join(" › ");
+    };
+    return list
+      .filter((c) => !c.is_hidden)
+      .map((c) => ({ id: c.id, name: pathOf(c), kind: c.kind, color: c.color ?? null }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories]);
+
 
   // ---- filters
   const [range, setRange] = useState<RangePreset>("ytd");
