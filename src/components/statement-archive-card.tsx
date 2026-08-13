@@ -312,65 +312,68 @@ export function StatementArchiveCard() {
           <h3 className="flex items-center gap-1.5 text-sm font-medium">
             <FileClock className="h-4 w-4" aria-hidden /> Import history
           </h3>
-          {!uploads.length && <p className="text-xs text-muted-foreground">No statements imported yet.</p>}
-          <ul className="divide-y divide-border rounded-[10px] border border-border">
-            {uploads.map((u) => (
-              <li key={u.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{u.filename}</p>
-                  <p className="text-muted-foreground">
-                    {fmtDate(u.created_at)} ·{" "}
-                    {u.imported_at
-                      ? `${Number(u.inserted_count ?? 0).toLocaleString()} imported`
-                      : `${Number(u.total_transactions ?? 0).toLocaleString()} parsed, not imported`}
-                    {u.has_file ? ` · ${fmtBytes(u.size_bytes)}` : ""}
-                    {u.archive_expires_at && u.has_file ? ` · expires ${fmtDate(u.archive_expires_at)}` : ""}
-                  </p>
-                  {u.error && <p className="text-destructive">{u.error}</p>}
-                </div>
-                <Badge variant={u.status === "failed" ? "destructive" : "secondary"}>{u.status}</Badge>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!u.has_file || download.isPending}
-                  onClick={() => download.mutate(u.id)}
-                >
-                  <Download className="mr-1 h-3.5 w-3.5" aria-hidden /> Download
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={!u.has_file}
-                  onClick={() => {
-                    setReparseFor(u);
-                    setReAccount("");
-                    setReBank("");
-                  }}
-                >
-                  <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden /> Re-parse
-                </Button>
-                {u.imported_at && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    disabled={undo.isPending}
-                    onClick={() => {
-                      if (
-                        !window.confirm(
-                          `Roll back this import? ${Number(u.inserted_count ?? 0).toLocaleString()} transactions inserted by it will be deleted.`,
-                        )
-                      )
-                        return;
-                      undo.mutate(u.id);
-                    }}
-                  >
-                    <Undo2 className="mr-1 h-3.5 w-3.5" aria-hidden /> Undo import
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
+          {!!uploads.length && (
+            <div className="max-h-[380px] overflow-y-auto rounded-[10px] border border-border bg-card">
+              <ul className="divide-y divide-border">
+                {uploads.map((u) => (
+                  <li key={u.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{u.filename}</p>
+                      <p className="text-muted-foreground">
+                        {fmtDate(u.created_at)} ·{" "}
+                        {u.imported_at
+                          ? `${Number(u.inserted_count ?? 0).toLocaleString()} imported`
+                          : `${Number(u.total_transactions ?? 0).toLocaleString()} parsed, not imported`}
+                        {u.has_file ? ` · ${fmtBytes(u.size_bytes)}` : ""}
+                        {u.archive_expires_at && u.has_file ? ` · expires ${fmtDate(u.archive_expires_at)}` : ""}
+                      </p>
+                      {u.error && <p className="text-destructive">{u.error}</p>}
+                    </div>
+                    <Badge variant={u.status === "failed" ? "destructive" : "secondary"}>{u.status}</Badge>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!u.has_file || download.isPending}
+                      onClick={() => download.mutate(u.id)}
+                    >
+                      <Download className="mr-1 h-3.5 w-3.5" aria-hidden /> Download
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!u.has_file}
+                      onClick={() => {
+                        setReparseFor(u);
+                        setReAccount("");
+                        setReBank("");
+                      }}
+                    >
+                      <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden /> Re-parse
+                    </Button>
+                    {u.imported_at && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        disabled={undo.isPending}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Roll back this import? ${Number(u.inserted_count ?? 0).toLocaleString()} transactions inserted by it will be deleted.`,
+                            )
+                          )
+                            return;
+                          undo.mutate(u.id);
+                        }}
+                      >
+                        <Undo2 className="mr-1 h-3.5 w-3.5" aria-hidden /> Undo import
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </CardContent>
 
