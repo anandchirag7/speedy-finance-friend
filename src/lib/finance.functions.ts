@@ -93,15 +93,24 @@ export const listCategories = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const householdId = await getHouseholdId(context);
-    const { data, error } = await context.supabase
-      .from("categories")
-      .select("*")
-      .eq("household_id", householdId)
-      .order("kind", { ascending: true })
-      .order("name", { ascending: true });
-    if (error) throw error;
-    return data ?? [];
+    // PostgREST caps rows per request, so page through the full set.
+    const PAGE = 1000;
+    const rows: any[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await context.supabase
+        .from("categories")
+        .select("id, name, kind, scope, parent_id, color, icon, is_hidden, sort_order")
+        .eq("household_id", householdId)
+        .order("kind", { ascending: true })
+        .order("name", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    return rows;
   });
+
 
 // ---------- transactions ----------
 const txnSchema = z.object({

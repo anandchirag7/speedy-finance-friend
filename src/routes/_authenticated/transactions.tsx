@@ -119,9 +119,36 @@ function TransactionsWorkspace() {
   const categoriesFn = useServerFn(listCategories);
   const viewsFn = useServerFn(listSavedViews);
 
-  const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => accountsFn() });
-  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesFn() });
+  const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => accountsFn(), staleTime: 5 * 60_000 });
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => categoriesFn(),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+  });
   const { data: savedViews = [] } = useQuery({ queryKey: ["txn-views"], queryFn: () => viewsFn() });
+
+  /** Flat, searchable options with full "Parent › Child" paths so picker labels
+   * match the categories table exactly (including deep sub-categories). */
+  const catOptions = useMemo(() => {
+    const list = categories as any[];
+    const byId = new Map(list.map((c) => [c.id, c]));
+    const pathOf = (c: any): string => {
+      const parts: string[] = [];
+      let cur: any = c;
+      let guard = 0;
+      while (cur && guard++ < 10) {
+        parts.unshift(cur.name);
+        cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+      }
+      return parts.join(" › ");
+    };
+    return list
+      .filter((c) => !c.is_hidden)
+      .map((c) => ({ id: c.id, name: pathOf(c), kind: c.kind, color: c.color ?? null }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories]);
+
 
   // ---- filters
   const [range, setRange] = useState<RangePreset>("ytd");
@@ -500,7 +527,7 @@ function TransactionsWorkspace() {
                       colWidths={colWidths}
                       selected={selected.has(t.id)}
                       expanded={expanded.has(t.id)}
-                      categories={categories as any[]}
+                      categories={catOptions}
                       onSelect={(v) => {
                         const next = new Set(selected);
                         if (v) next.add(t.id); else next.delete(t.id);
@@ -535,7 +562,7 @@ function TransactionsWorkspace() {
                   <Label>Category</Label>
                   <MultiPicker
                     label="Any category"
-                    options={(categories as any[]).map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
+                    options={catOptions}
                     value={selectedCategories}
                     onChange={setSelectedCategories}
                   />
@@ -695,19 +722,18 @@ function TransactionsWorkspace() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{selected.size} selected</span>
               <span className="mx-2 h-4 w-px bg-border" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              <Popover>
+                <PopoverTrigger asChild>
                   <Button size="sm" variant="outline">Categorize</Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-72 overflow-auto">
-                  {(categories as any[]).map((c) => (
-                    <DropdownMenuItem
-                      key={c.id}
-                      onClick={() => bulkPatchMut.mutate({ ids: Array.from(selected), patch: { category_id: c.id } })}
-                    >{c.name}</DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-72 p-0">
+                  <CategorySearchList
+                    categories={catOptions}
+                    onPick={(id) => bulkPatchMut.mutate({ ids: Array.from(selected), patch: { category_id: id } })}
+                  />
+                </PopoverContent>
+              </Popover>
+
               <Button size="sm" variant="outline" onClick={() =>
                 bulkPatchMut.mutate({ ids: Array.from(selected), patch: { is_reviewed: true } })
               }><CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />Mark reviewed</Button>
@@ -878,29 +904,86 @@ function DateRangePicker({
   );
 }
 
+/* -------- Searchable category list (bulk + inline pickers) -------- */
+type CatOption = { id: string; name: string; kind?: string; color?: string | null };
+
+function CategorySearchList({
+  categories, onPick, includeNone,
+}: { categories: CatOption[]; onPick: (id: string | null) => void; includeNone?: boolean }) {
+  const [query, setQuery] = useState("");
+  const options = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q ? categories.filter((c) => c.name.toLowerCase().includes(q)) : categories;
+    return list.slice(0, 80);
+  }, [query, categories]);
+
+  return (
+    <Command shouldFilter={false}>
+      <CommandInput value={query} onValueChange={setQuery} placeholder="Search category…" />
+      <CommandList className="max-h-64">
+        <CommandEmpty>No matches.</CommandEmpty>
+        <CommandGroup>
+          {includeNone && (
+            <CommandItem value="__none" onSelect={() => onPick(null)}>Uncategorized</CommandItem>
+          )}
+          {options.map((c) => (
+            <CommandItem key={c.id} value={c.id} onSelect={() => onPick(c.id)}>
+              <span className="mr-2 h-2 w-2 shrink-0 rounded-full" style={{ background: c.color ?? "oklch(0.9 0.02 95)" }} />
+              <span className="truncate">{c.name}</span>
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+    </Command>
+  );
+}
+
 /* -------- Multi-picker -------- */
 function MultiPicker({
   label, options, value, onChange,
 }: { label: string; options: { id: string; name: string; kind?: string }[]; value: string[]; onChange: (v: string[]) => void }) {
+  const [query, setQuery] = useState("");
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options;
+    return list.slice(0, 200);
+  }, [query, options]);
+
   return (
-    <div className="max-h-56 space-y-0.5 overflow-auto rounded-md border p-1.5">
-      {options.length === 0 && <div className="p-2 text-xs text-muted-foreground">{label}</div>}
-      {options.map((o) => (
-        <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted/60">
-          <Checkbox
-            checked={value.includes(o.id)}
-            onCheckedChange={(v) => {
-              if (v) onChange([...value, o.id]);
-              else onChange(value.filter((x) => x !== o.id));
-            }}
-          />
-          <span className="flex-1 text-sm">{o.name}</span>
-          {o.kind && <span className="text-[10px] uppercase text-muted-foreground">{o.kind}</span>}
-        </label>
-      ))}
+    <div className="rounded-md border">
+      {options.length > 12 && (
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search…"
+          className="h-8 rounded-b-none border-0 border-b text-xs focus-visible:ring-0"
+        />
+      )}
+      <div className="max-h-56 space-y-0.5 overflow-auto p-1.5">
+        {shown.length === 0 && <div className="p-2 text-xs text-muted-foreground">{label}</div>}
+        {shown.map((o) => (
+          <label key={o.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted/60">
+            <Checkbox
+              checked={value.includes(o.id)}
+              onCheckedChange={(v) => {
+                if (v) onChange([...value, o.id]);
+                else onChange(value.filter((x) => x !== o.id));
+              }}
+            />
+            <span className="flex-1 text-sm">{o.name}</span>
+            {o.kind && <span className="text-[10px] uppercase text-muted-foreground">{o.kind}</span>}
+          </label>
+        ))}
+        {options.length > shown.length && (
+          <div className="px-2 py-1 text-[10px] text-muted-foreground">
+            Showing {shown.length} of {options.length} — refine your search.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
 
 function TriToggle({ label, value, onChange }: { label: string; value: "any" | "yes" | "no"; onChange: (v: any) => void }) {
   return (
@@ -1342,25 +1425,16 @@ function CategoryInline({
           <ChevronDown className="h-3 w-3 opacity-40" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search category…" />
-          <CommandList className="max-h-64">
-            <CommandEmpty>No matches.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem onSelect={() => { onPatch({ category_id: null }); setOpen(false); }}>
-                Uncategorized
-              </CommandItem>
-              {categories.map((c) => (
-                <CommandItem key={c.id} onSelect={() => { onPatch({ category_id: c.id }); setOpen(false); }}>
-                  <span className="mr-2 h-2 w-2 rounded-full" style={{ background: c.color ?? "oklch(0.9 0.02 95)" }} />
-                  {c.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+      <PopoverContent className="w-72 p-0" align="start">
+        {open && (
+          <CategorySearchList
+            categories={categories as CatOption[]}
+            includeNone
+            onPick={(id) => { onPatch({ category_id: id }); setOpen(false); }}
+          />
+        )}
       </PopoverContent>
+
     </Popover>
   );
 }
