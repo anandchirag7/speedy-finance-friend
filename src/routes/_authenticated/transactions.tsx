@@ -29,7 +29,7 @@ import {
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
-import { CategorySelectPopover } from "@/components/category-select-popover";
+import { CategorySelectPopover, getCategoryHierarchyLabel } from "@/components/category-select-popover";
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
@@ -123,6 +123,15 @@ function TransactionsWorkspace() {
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: () => accountsFn() });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesFn() });
   const { data: savedViews = [] } = useQuery({ queryKey: ["txn-views"], queryFn: () => viewsFn() });
+
+  const categoryHierarchyMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const catMap = new Map((categories as any[]).map((c) => [c.id, c]));
+    for (const c of categories as any[]) {
+      map.set(c.id, getCategoryHierarchyLabel(c.id, catMap));
+    }
+    return map;
+  }, [categories]);
 
   // ---- filters
   const [range, setRange] = useState<RangePreset>("ytd");
@@ -502,6 +511,7 @@ function TransactionsWorkspace() {
                       selected={selected.has(t.id)}
                       expanded={expanded.has(t.id)}
                       categories={categories as any[]}
+                      categoryHierarchyMap={categoryHierarchyMap}
                       onSelect={(v) => {
                         const next = new Set(selected);
                         if (v) next.add(t.id); else next.delete(t.id);
@@ -1147,10 +1157,11 @@ function BreakdownList({
 
 /* -------- Row -------- */
 function TxnRow({
-  txn, rowH, cols, colWidths, selected, expanded, categories, onSelect, onToggleExpand, onOpenDetail, onPatch, onDelete,
+  txn, rowH, cols, colWidths, selected, expanded, categories, categoryHierarchyMap, onSelect, onToggleExpand, onOpenDetail, onPatch, onDelete,
 }: {
   txn: Txn; rowH: string; cols: ColKey[]; colWidths: Record<string, number>;
   selected: boolean; expanded: boolean; categories: any[];
+  categoryHierarchyMap?: Map<string, string>;
   onSelect: (v: boolean) => void; onToggleExpand: () => void;
   onOpenDetail: () => void; onPatch: (patch: any) => void; onDelete: () => void;
 }) {
@@ -1212,6 +1223,7 @@ function TxnRow({
                     txnId={txn.id}
                     category={txn.category}
                     categories={categories}
+                    categoryHierarchyMap={categoryHierarchyMap}
                     onPatch={onPatch}
                   />
                 </td>
@@ -1323,23 +1335,38 @@ function MerchantAvatar({ name, color }: { name: string; color?: string | null }
 
 /* -------- Inline category editor -------- */
 function CategoryInline({
-  category, categories, onPatch,
-}: { txnId: string; category: Txn["category"]; categories: any[]; onPatch: (p: any) => void }) {
+  category,
+  categories,
+  categoryHierarchyMap,
+  onPatch,
+}: {
+  txnId: string;
+  category: Txn["category"];
+  categories: any[];
+  categoryHierarchyMap?: Map<string, string>;
+  onPatch: (p: any) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const fullLabel = category
+    ? (categoryHierarchyMap?.get(category.id) ?? category.name)
+    : "Uncategorized";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="inline-flex max-w-full items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-xs hover:bg-muted">
+        <button
+          className="inline-flex max-w-full items-center gap-1.5 truncate rounded-md px-1.5 py-0.5 text-xs hover:bg-muted"
+          title={fullLabel}
+        >
           {category ? (
             <>
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: category.color ?? "oklch(0.9 0.02 95)" }} />
-              <span className="truncate">{category.name}</span>
+              <span className="truncate">{fullLabel}</span>
             </>
           ) : (
             <span className="text-muted-foreground">Uncategorized</span>
           )}
-          <ChevronDown className="h-3 w-3 opacity-40" />
+          <ChevronDown className="h-3 w-3 opacity-40 shrink-0" />
         </button>
       </PopoverTrigger>
       {open && (
